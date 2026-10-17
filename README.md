@@ -47,7 +47,7 @@ Abrir [Soto local](http://127.0.0.1:3000). La ruta de salida se puede cambiar me
 
 ```sh
 cargo fmt --all --check
-cargo test --locked -p soto-core -p soto-server
+cargo test --locked --workspace
 cargo clippy --locked -p soto-core -p soto-server --all-targets -- -D warnings
 cargo clippy --locked -p soto-web --target wasm32-unknown-unknown -- -D warnings
 ```

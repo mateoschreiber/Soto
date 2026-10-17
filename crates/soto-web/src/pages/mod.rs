@@ -10,13 +10,13 @@ pub fn EmptyState(title: String, message: String) -> Element {
 pub fn Sidebar() -> Element {
     let cx = use_context::<AppContext>();
     let r = cx.route.read().clone();
-    rsx! {aside{class:"sidebar",a{class:"brand",href:"#/local/home","SOTO."}nav{"aria-label":"Navegación principal",for (page,icon,label,origin) in [(Page::Home,"home","Inicio",r.origin),(Page::Library,"local","Local",Origin::Local),(Page::Library,"torrent","Torrents",Origin::Torrent),(Page::Collections,"collection","Colecciones",r.origin),(Page::Queue,"clock","En proceso",r.origin),(Page::Server,"server","Servidor",r.origin),(Page::Providers,"plug","Fuentes",r.origin),(Page::Profiles,"info","Perfiles",r.origin)]{a{class:"nav-link",id:"nav-{origin.path()}-{page.path()}",href:Route::new(origin,page).href(),"aria-current":if r.page==page&&r.origin==origin{"page"}else{"false"},Icon{name:icon,size:28}span{"{label}"}}}}}}
+    rsx! {aside{class:"sidebar",a{class:"brand",href:"#/local/home","SOTO."}nav{"aria-label":"Navegación principal",for (page,icon,label,origin) in [(Page::Home,"home","Inicio",r.origin),(Page::Library,"local","Local",Origin::Local),(Page::Library,"torrent","Torrents",Origin::Torrent),(Page::Collections,"collection","Colecciones",r.origin),(Page::Queue,"clock","En proceso",r.origin),(Page::Server,"server","Servidor",r.origin),(Page::Providers,"plug","Fuentes",r.origin)]{a{class:"nav-link",id:"nav-{origin.path()}-{page.path()}",href:Route::new(origin,page).href(),"aria-current":if r.page==page&&r.origin==origin{"page"}else{"false"},Icon{name:icon,size:28}span{"{label}"}}}}}}
 }
 #[component]
-pub fn Topbar(session: Session) -> Element {
+pub fn Topbar() -> Element {
     let mut cx = use_context::<AppContext>();
     let mut query = use_signal(String::new);
-    rsx! {header{class:"topbar",form{class:"global-search",onsubmit:move|e|{e.prevent_default();let mut r=Route::new(cx.route.read().origin,Page::Search);r.query=query();navigate(r);},Icon{name:"search"}label{class:"sr-only",r#for:"query","Buscar"}input{id:"query",r#type:"search",value:"{query}",placeholder:"Buscar en tu biblioteca",oninput:move|e|query.set(e.value())}}div{class:"functional-actions",span{"{session.server_name} · {session.username}"}button{class:"button secondary",onclick:move |_|{cx.preferences.write().tv^=true;persist(&cx.preferences.read());},"Modo TV"}button{class:"button secondary",onclick:move |_|{spawn(async move{if request_value("DELETE","/session",None).await.is_ok(){cx.session.set(None);cx.player.set(None);}});},"Salir"}}}}
+    rsx! {header{class:"topbar",form{class:"global-search",onsubmit:move|e|{e.prevent_default();let mut r=Route::new(cx.route.read().origin,Page::Search);r.query=query();navigate(r);},Icon{name:"search"}label{class:"sr-only",r#for:"query","Buscar"}input{id:"query",r#type:"search",value:"{query}",placeholder:"Buscar en tu biblioteca",oninput:move|e|query.set(e.value())}}div{class:"functional-actions",span{"Soto · Biblioteca multimedia"}button{class:"button secondary",onclick:move |_|{cx.preferences.write().tv^=true;persist(&cx.preferences.read());},"Modo TV"}}}}
 }
 #[derive(Clone, PartialEq)]
 pub struct Field {
@@ -65,7 +65,6 @@ pub fn ApiForm(
     let mut error = use_signal(|| None::<String>);
     let mut cx = use_context::<AppContext>();
     let submitted_fields = fields.clone();
-    let setup_form = path.ends_with("/setup");
     let submit = move |e: FormEvent| {
         e.prevent_default();
         if busy() {
@@ -119,9 +118,6 @@ pub fn ApiForm(
                     }
                 }
                 Err(e) => {
-                    if e.status == 401 {
-                        cx.session.set(None);
-                    }
                     error.set(Some(e.message));
                 }
             }
@@ -138,7 +134,7 @@ pub fn ApiForm(
         }else if f.kind=="checkbox"{
          input{r#type:"checkbox",checked:values.read().get(&f.key).is_some_and(|s|s=="true"),onchange:{let key=f.key.clone();move|e|{values.write().insert(key.clone(),e.value());}}}
         }else{
-         input{r#type:if f.kind=="ids"{"text"}else{f.kind.as_str()},name:"{f.key}",autocomplete:if f.key=="username"{"username"}else if f.key=="password"&&setup_form{"new-password"}else if f.key=="password"{"current-password"}else{"off"},required:f.required,value:values.read().get(&f.key).cloned().unwrap_or_default(),minlength:if f.key=="password"{"12"}else{"0"},maxlength:if f.kind=="password"{"1024"}else{"8192"},oninput:{let key=f.key.clone();move|e|{values.write().insert(key.clone(),e.value());}}}
+         input{r#type:if f.kind=="ids"{"text"}else{f.kind.as_str()},name:"{f.key}",autocomplete:"off",required:f.required,value:values.read().get(&f.key).cloned().unwrap_or_default(),maxlength:if f.kind=="password"{"1024"}else{"8192"},oninput:{let key=f.key.clone();move|e|{values.write().insert(key.clone(),e.value());}}}
         }
        }
       }
@@ -148,31 +144,10 @@ pub fn ApiForm(
     }
 }
 #[component]
-pub fn Auth(configured: bool, on_authenticated: EventHandler) -> Element {
-    let fields = if configured {
-        vec![
-            field("username", "Usuario", "text"),
-            field("password", "Contraseña", "password"),
-        ]
-    } else {
-        vec![
-            field(
-                "setup_token",
-                "Token de instalación (registro del servidor)",
-                "password",
-            ),
-            field("server_name", "Nombre del servidor", "text"),
-            field("username", "Administrador", "text"),
-            field("password", "Contraseña (mínimo 12 caracteres)", "password"),
-        ]
-    };
-    rsx! {div{class:"auth-card",span{class:"brand","SOTO."}h1{if configured{"Tu biblioteca te espera"}else{"Configura tu servidor"}}p{if configured{"Inicia sesión para acceder a tu biblioteca."}else{"Crea la cuenta del administrador. Puedes añadir bibliotecas y servicios después."}}ApiForm{title:if configured{"Iniciar sesión"}else{"Crear administrador"},path:if configured{"/session"}else{"/setup"},fields,on_success:move |_|on_authenticated.call(())}}}
-}
-#[component]
 pub fn RouteView() -> Element {
     let cx = use_context::<AppContext>();
     let route = cx.route.read().clone();
-    rsx! {a{class:"skip",href:"#page-title","Saltar al contenido"}if route.page!=Page::Home{div{class:"functional-heading",span{class:"eyebrow","TU BIBLIOTECA, EN TU HOMELAB"}h1{id:"page-title",tabindex:"-1","{page_title(route.page,route.origin)}"}}}match route.page {Page::Home|Page::Library|Page::Search|Page::Collections=>rsx!{Catalog{key:"{route.href()}",route:route.clone()}if route.page==Page::Home{ContinueWatching{}}if route.page==Page::Library&&route.origin==Origin::Torrent{Torrents{}}},Page::Detail|Page::Sources=>rsx!{MediaDetail{key:"{route.href()}",id:route.id.unwrap_or_default()}},Page::Server=>rsx!{Admin{}},Page::Providers=>rsx!{Providers{}},Page::Queue=>rsx!{Records{path:"/jobs",kind:"jobs"}},Page::Profiles=>rsx!{Records{path:"/profiles",kind:"profiles"}ApiForm{title:"Crear perfil",path:"/profiles",fields:vec![field("name","Nombre","text")]}},Page::Devices=>rsx!{EmptyState{title:"Modo TV",message:"Activa Modo TV en la barra superior. Usa las flechas para navegar, Intro para elegir y Escape para volver."}},_=>rsx!{EmptyState{title:"Página no encontrada",message:"Usa la navegación para volver a tu biblioteca."}}}}
+    rsx! {a{class:"skip",href:"#page-title","Saltar al contenido"}if route.page!=Page::Home{div{class:"functional-heading",span{class:"eyebrow","TU BIBLIOTECA, EN TU HOMELAB"}h1{id:"page-title",tabindex:"-1","{page_title(route.page,route.origin)}"}}}match route.page {Page::Home|Page::Library|Page::Search|Page::Collections=>rsx!{Catalog{key:"{route.href()}",route:route.clone()}if route.page==Page::Home{ContinueWatching{}}if route.page==Page::Library&&route.origin==Origin::Torrent{Torrents{}}},Page::Detail|Page::Sources=>rsx!{MediaDetail{key:"{route.href()}",id:route.id.unwrap_or_default()}},Page::Server=>rsx!{Admin{}},Page::Providers=>rsx!{Providers{}},Page::Queue=>rsx!{Records{path:"/jobs",kind:"jobs"}},Page::Devices=>rsx!{EmptyState{title:"Modo TV",message:"Activa Modo TV en la barra superior. Usa las flechas para navegar, Intro para elegir y Escape para volver."}},_=>rsx!{EmptyState{title:"Página no encontrada",message:"Usa la navegación para volver a tu biblioteca."}}}}
 }
 fn page_title(page: Page, origin: Origin) -> &'static str {
     match page {
@@ -185,7 +160,6 @@ fn page_title(page: Page, origin: Origin) -> &'static str {
         Page::Server => "Servidor",
         Page::Providers => "Fuentes y Debrid",
         Page::Queue => "En proceso",
-        Page::Profiles => "Perfiles",
         _ => "Soto",
     }
 }
@@ -349,7 +323,7 @@ fn Action(
     let mut busy = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let mut cx = use_context::<AppContext>();
-    rsx! {div{class:"functional-action",button{class:"button secondary",disabled:busy(),onclick:move |_|{busy.set(true);error.set(None);let path=path.clone();let method=method.clone();let body=body.clone();spawn(async move{match request_value(&method,&path,if body.is_null(){None}else{Some(body)}).await{Ok(_)=>cx.revision+=1,Err(e)=>{if e.status==401{cx.session.set(None);}error.set(Some(e.message));}}busy.set(false);});},if busy(){"Procesando…"}else{"{label}"}}if let Some(message)=error(){p{class:"form-error",role:"alert","{message}"}}}}
+    rsx! {div{class:"functional-action",button{class:"button secondary",disabled:busy(),onclick:move |_|{busy.set(true);error.set(None);let path=path.clone();let method=method.clone();let body=body.clone();spawn(async move{match request_value(&method,&path,if body.is_null(){None}else{Some(body)}).await{Ok(_)=>cx.revision+=1,Err(e)=>{error.set(Some(e.message));}}busy.set(false);});},if busy(){"Procesando…"}else{"{label}"}}if let Some(message)=error(){p{class:"form-error",role:"alert","{message}"}}}}
 }
 #[component]
 fn Records(path: String, kind: String) -> Element {
@@ -383,7 +357,7 @@ fn Record(row: Value, kind: String, path: String) -> Element {
     );
     rsx! {section{class:"functional-row",div{h3{"{name}"}p{"{status}"}if let Some(progress)=row["progress"].as_f64(){p{"Progreso: {progress:.1}"}}if let Some(error)=row["error"].as_str(){p{class:"form-error","{error}"}}if kind=="libraries"{p{{text(&row,"path")}}if !row["last_scan"].is_null(){p{{format!("Último escaneo: {}",row["last_scan"])}}}}if kind=="providers"{p{{text(&row,"url")}}}}
      div{class:"functional-actions",
-     match kind.as_str(){"libraries"=>rsx!{Action{label:"Escanear",path:format!("{item_path}/scan")}Action{label:"Quitar biblioteca",path:item_path.clone(),method:"DELETE"}},"providers"=>rsx!{Action{label:"Actualizar",path:format!("{item_path}/refresh")}Action{label:"Eliminar proveedor",path:item_path.clone(),method:"DELETE"}},"profiles"=>rsx!{Action{label:"Eliminar perfil",path:item_path.clone(),method:"DELETE"}},"jobs" if active=>rsx!{Action{label:"Cancelar trabajo",path:format!("{item_path}/cancel")}},"torrents"=>rsx!{Action{label:"Pausar",path:format!("{item_path}/pause")}Action{label:"Reanudar",path:format!("{item_path}/resume")}Action{label:"Cancelar torrent",path:format!("{item_path}/cancel")}},_=>rsx!{}}
+     match kind.as_str(){"libraries"=>rsx!{Action{label:"Escanear",path:format!("{item_path}/scan")}Action{label:"Quitar biblioteca",path:item_path.clone(),method:"DELETE"}},"providers"=>rsx!{Action{label:"Actualizar",path:format!("{item_path}/refresh")}Action{label:"Eliminar proveedor",path:item_path.clone(),method:"DELETE"}},"jobs" if active=>rsx!{Action{label:"Cancelar trabajo",path:format!("{item_path}/cancel")}},"torrents"=>rsx!{Action{label:"Pausar",path:format!("{item_path}/pause")}Action{label:"Reanudar",path:format!("{item_path}/resume")}Action{label:"Cancelar torrent",path:format!("{item_path}/cancel")}},_=>rsx!{}}
      }
      if let Some(files)=row["files"].as_array(){div{class:"functional-files",for f in files{p{{format!("ID {} · {} · {} bytes · seleccionado: {}",f["id"],text(f,"name"),f["size"],f["selected"])}}}ApiForm{title:"Seleccionar archivos",path:format!("{item_path}/select"),fields:vec![field("file_ids","IDs de archivos separados por comas","ids")]}}}
      }
@@ -417,10 +391,6 @@ fn TorrentFile() -> Element {
 }
 #[component]
 fn Admin() -> Element {
-    let cx = use_context::<AppContext>();
-    if !cx.session.read().as_ref().is_some_and(|s| s.admin) {
-        return rsx! {EmptyState{title:"Acceso de administrador",message:"La configuración está reservada al administrador del servidor."}};
-    }
     rsx! {Settings{}Libraries{}}
 }
 #[component]
@@ -543,28 +513,30 @@ fn save_progress(media_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn setup() -> Element {
+    fn shell() -> Element {
         use_context_provider(|| AppContext {
             route: Signal::new(Route::default()),
             preferences: Signal::new(Default::default()),
             modal: Signal::new(None),
-            session: Signal::new(None),
             revision: Signal::new(0),
             player: Signal::new(None),
             focus_history: Default::default(),
         });
-        rsx! {Auth{configured:false,on_authenticated:move |_|{}}}
+        rsx! {Sidebar{} Topbar{} main{class:"workspace",RouteView{}}}
     }
     fn empty() -> Element {
         rsx! {EmptyState{title:"Todavía no hay contenido",message:"Añade una biblioteca"}}
     }
     #[test]
-    fn clean_setup_has_real_credentials_form() {
-        let mut dom = VirtualDom::new(setup);
+    fn shell_opens_without_login_or_user_controls() {
+        let mut dom = VirtualDom::new(shell);
         dom.rebuild_in_place();
         let html = dioxus_ssr::render(&dom);
-        assert!(html.contains("setup_token"));
-        assert!(html.contains("password"));
+        assert!(html.contains("SOTO."));
+        assert!(html.contains("Inicio"));
+        assert!(!html.contains("Iniciar sesión"));
+        assert!(!html.contains("Administrador"));
+        assert!(!html.contains("Salir"));
         assert!(!html.contains("Dune"));
         assert!(!html.contains("Vista previa"));
     }

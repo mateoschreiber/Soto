@@ -47,7 +47,7 @@ pub async fn request_value(
         _ => Request::get(&format!("/api/v1{path}")),
     }
     .header("x-soto-request", "1")
-    .credentials(web_sys::RequestCredentials::SameOrigin);
+    .credentials(web_sys::RequestCredentials::Omit);
     let response = if let Some(body) = body {
         request = request.header("Content-Type", "application/json");
         request

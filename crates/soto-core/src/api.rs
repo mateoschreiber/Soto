@@ -1,17 +1,5 @@
 //! Shared functional API response contracts. No credentials or filesystem locators.
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Deserialize, Serialize, PartialEq)]
-pub struct Setup {
-    pub configured: bool,
-    pub server_name: String,
-}
-#[derive(Clone, Deserialize, Serialize, PartialEq)]
-pub struct Session {
-    pub id: String,
-    pub username: String,
-    pub admin: bool,
-    pub server_name: String,
-}
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct Media {
     pub id: String,

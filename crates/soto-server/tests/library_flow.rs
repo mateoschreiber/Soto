@@ -21,7 +21,6 @@ async fn request(app: Router, method: &str, path: &str, body: Value) -> axum::re
             .uri(path)
             .header("content-type", "application/json")
             .header("x-soto-request", "1")
-            .header("cookie", "soto_session=test-only-session")
             .body(Body::from(body.to_string()))
             .unwrap(),
     )
@@ -77,24 +76,6 @@ async fn mounted_library_scan_range_progress_cancel_and_disconnect() {
         allow_private_providers: false,
     };
     let state = soto_server::app::AppState::open(config).unwrap();
-    state
-        .db
-        .call(|c| {
-            c.execute(
-                "INSERT INTO users VALUES('owner','owner','test-only',1)",
-                [],
-            )?;
-            c.execute(
-                "INSERT INTO sessions VALUES(?,'owner',?)",
-                rusqlite::params![
-                    soto_server::app::digest("test-only-session"),
-                    soto_server::app::now() + 1000
-                ],
-            )?;
-            Ok(())
-        })
-        .await
-        .unwrap();
     let app = soto_server::application(root.join("static"), state.clone());
     let forbidden = request(
         app.clone(),
@@ -160,7 +141,6 @@ async fn mounted_library_scan_range_progress_cancel_and_disconnect() {
         .oneshot(
             Request::builder()
                 .uri(session["url"].as_str().unwrap())
-                .header("cookie", "soto_session=test-only-session")
                 .header("range", "bytes=2-4")
                 .body(Body::empty())
                 .unwrap(),

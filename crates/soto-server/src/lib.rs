@@ -118,8 +118,7 @@ pub fn router(static_dir: PathBuf) -> Router {
 }
 
 pub fn application(static_dir: PathBuf, state: app::AppState) -> Router {
-    let protected = app::session_routes()
-        .merge(catalog::routes())
+    let routes = catalog::routes()
         .merge(library::routes())
         .merge(playback::routes())
         .merge(providers::routes())
@@ -127,10 +126,10 @@ pub fn application(static_dir: PathBuf, state: app::AppState) -> Router {
         .merge(torrents::routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
-            app::authorize,
+            app::local_request_policy,
         ));
     let readiness = state.clone();
-    let api = app::public_routes().merge(protected).with_state(state);
+    let api = routes.with_state(state);
     router(static_dir)
         .nest("/api/v1", api)
         .route(

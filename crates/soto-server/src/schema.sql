@@ -2,8 +2,6 @@ PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,admin INTEGER NOT NULL DEFAULT 1);
-CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS profiles(id TEXT PRIMARY KEY,name TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS libraries(id TEXT PRIMARY KEY,name TEXT NOT NULL,root_id TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'available',last_scan INTEGER,error TEXT);
 CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY,title TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'movie',year INTEGER,description TEXT,rating TEXT,duration_seconds INTEGER,poster TEXT,origin TEXT NOT NULL CHECK(origin IN ('local','torrent')),library_id TEXT REFERENCES libraries(id) ON DELETE CASCADE,external_id TEXT,provider_id TEXT,file_key TEXT UNIQUE,scan_generation TEXT);
 CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY,media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,origin TEXT NOT NULL CHECK(origin IN ('local','torrent')),kind TEXT NOT NULL,label TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'available',locator TEXT NOT NULL,quality TEXT,size INTEGER,video_codec TEXT,audio_codec TEXT,details TEXT NOT NULL DEFAULT '{}');

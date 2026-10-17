@@ -15,14 +15,22 @@ impl Store {
         connection
             .execute_batch(include_str!("schema.sql"))
             .map_err(|_| ApiError::internal("No se pudo aplicar la migración"))?;
+        // Collapse any previous accounts into Soto's single local owner so saved
+        // items and viewing progress survive the transition away from user login.
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 INSERT OR IGNORE INTO users(id,username,password_hash,admin) VALUES('local','local','',1);
+                 INSERT OR IGNORE INTO collections(user_id,media_id) SELECT 'local',media_id FROM collections;
+                 INSERT OR IGNORE INTO progress(user_id,media_id,position,duration) SELECT 'local',media_id,position,duration FROM progress;
+                 DROP TABLE IF EXISTS sessions;
+                 DELETE FROM playback;
+                 DROP TABLE IF EXISTS profiles;
+                 DELETE FROM users WHERE id!='local';
+                 COMMIT;",
+            )
+            .map_err(|_| ApiError::internal("No se pudo migrar al modo sin usuarios"))?;
         Ok(Self(Arc::new(Mutex::new(connection))))
-    }
-    pub fn initial_setup_required(&self) -> Result<bool, ApiError> {
-        let c = self
-            .0
-            .lock()
-            .map_err(|_| ApiError::internal("SQLite no disponible"))?;
-        Ok(c.query_row("SELECT count(*)=0 FROM users", [], |r| r.get(0))?)
     }
     pub async fn call<T, F>(&self, f: F) -> Result<T, ApiError>
     where

@@ -1,15 +1,10 @@
 use crate::db::Store;
-use argon2::{
-    Argon2, PasswordHasher, PasswordVerifier,
-    password_hash::{PasswordHash, SaltString},
-};
 use axum::{
-    Json, Router,
-    extract::{Extension, Request, State},
-    http::{HeaderValue, StatusCode, header},
+    Json,
+    extract::{Request, State},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chacha20poly1305::{
@@ -18,14 +13,9 @@ use chacha20poly1305::{
 };
 use rand::{RngCore, rngs::OsRng};
 use rusqlite::{OptionalExtension, params};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 #[derive(Debug)]
 pub struct ApiError(pub StatusCode, pub &'static str, pub String);
@@ -44,7 +34,7 @@ impl ApiError {
         Self(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
-            "Inicia sesión".into(),
+            "El worker rechazó la credencial interna".into(),
         )
     }
     pub fn not_found() -> Self {
@@ -116,13 +106,10 @@ pub struct AppState {
     pub client: reqwest::Client,
     pub key: [u8; 32],
     pub worker_token: Arc<String>,
-    pub attempts: Arc<Mutex<HashMap<String, (u32, i64)>>>,
 }
-#[derive(Clone, Serialize)]
-pub struct User {
+#[derive(Clone)]
+pub struct LocalOwner {
     pub id: String,
-    pub username: String,
-    pub admin: bool,
 }
 pub fn now() -> i64 {
     std::time::SystemTime::now()
@@ -181,12 +168,6 @@ impl AppState {
         let worker_token = std::fs::read_to_string(token_file)
             .map_err(|_| ApiError::internal("Falta el secreto del worker"))?;
         let db = Store::open(&config.data.join("soto.sqlite"))?;
-        if db.initial_setup_required()? {
-            private_file(
-                &config.data.join("bootstrap-token"),
-                random_secret().as_bytes(),
-            )?;
-        }
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -199,7 +180,6 @@ impl AppState {
             client,
             key,
             worker_token: Arc::new(worker_token),
-            attempts: Arc::new(Mutex::new(HashMap::new())),
         })
     }
     pub async fn setting(&self, key: &str) -> Result<Option<String>, ApiError> {
@@ -289,7 +269,7 @@ pub async fn job_value(state: &AppState, id: &str) -> Result<Value, ApiError> {
     state.db.call(move|c|Ok(c.query_row("SELECT id,kind,status,progress,error FROM jobs WHERE id=?",[id],|r|Ok(json!({"id":r.get::<_,String>(0)?,"kind":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"progress":r.get::<_,f64>(3)?,"error":r.get::<_,Option<String>>(4)?})))?)).await
 }
 
-pub async fn authorize(
+pub async fn local_request_policy(
     State(s): State<AppState>,
     mut req: Request,
     next: Next,
@@ -331,241 +311,9 @@ pub async fn authorize(
             }
         }
     }
-    let token = req
-        .headers()
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|c| {
-            c.split(';')
-                .map(str::trim)
-                .find_map(|v| v.strip_prefix("soto_session="))
-        })
-        .ok_or_else(ApiError::unauthorized)?;
-    let hash = digest(token);
-    let user=s.db.call(move|c|Ok(c.query_row("SELECT u.id,u.username,u.admin FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires>?",params![hash,now()],|r|Ok(User{id:r.get(0)?,username:r.get(1)?,admin:r.get::<_,i64>(2)?==1})).optional()?)).await?.ok_or_else(ApiError::unauthorized)?;
-    req.extensions_mut().insert(user);
+    // Soto is a single-owner home service: the owner is the installation, not a
+    // person account. The `local` row only preserves the existing DB foreign keys.
+    req.extensions_mut()
+        .insert(LocalOwner { id: "local".into() });
     Ok(next.run(req).await)
-}
-pub async fn administrator(
-    Extension(user): Extension<User>,
-    req: Request,
-    next: Next,
-) -> Result<Response, ApiError> {
-    if !user.admin {
-        return Err(ApiError::forbidden());
-    }
-    Ok(next.run(req).await)
-}
-fn cookie(s: &AppState, token: &str, clear: bool) -> HeaderValue {
-    HeaderValue::from_str(&format!(
-        "soto_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}{}",
-        if clear { 0 } else { 604800 },
-        if s.config
-            .public_url
-            .as_deref()
-            .is_some_and(|u| u.starts_with("https://"))
-        {
-            "; Secure"
-        } else {
-            ""
-        }
-    ))
-    .expect("generated session cookie")
-}
-async fn start_session(s: &AppState, user: String) -> Result<Response, ApiError> {
-    let token = random_secret();
-    let hash = digest(&token);
-    s.db.call(move |c| {
-        c.execute("DELETE FROM sessions WHERE expires<?", [now()])?;
-        c.execute(
-            "INSERT INTO sessions VALUES(?,?,?)",
-            params![hash, user, now() + 604800],
-        )?;
-        Ok(())
-    })
-    .await?;
-    let mut response = Json(json!({"ok":true})).into_response();
-    response
-        .headers_mut()
-        .insert(header::SET_COOKIE, cookie(s, &token, false));
-    Ok(response)
-}
-#[derive(Deserialize)]
-struct Setup {
-    setup_token: String,
-    server_name: String,
-    username: String,
-    password: String,
-}
-fn validate_name(s: &str) -> bool {
-    !s.trim().is_empty() && s.chars().count() <= 80 && !s.chars().any(char::is_control)
-}
-async fn setup_status(State(s): State<AppState>) -> Result<Json<Value>, ApiError> {
-    let count: i64 =
-        s.db.call(|c| Ok(c.query_row("SELECT count(*) FROM users", [], |r| r.get(0))?))
-            .await?;
-    Ok(Json(
-        json!({"configured":count>0,"server_name":s.setting("server_name").await?.unwrap_or_else(||"Soto".into())}),
-    ))
-}
-async fn setup(
-    State(s): State<AppState>,
-    headers: axum::http::HeaderMap,
-    Json(input): Json<Setup>,
-) -> Result<Response, ApiError> {
-    if headers.get("x-soto-request").and_then(|v| v.to_str().ok()) != Some("1") {
-        return Err(ApiError::forbidden());
-    }
-    if !validate_name(&input.server_name)
-        || !validate_name(&input.username)
-        || input.password.len() < 12
-        || input.password.len() > 1024
-    {
-        return Err(ApiError::bad(
-            "Nombre válido y contraseña de al menos 12 caracteres requeridos",
-        ));
-    }
-    let expected = std::fs::read_to_string(s.config.data.join("bootstrap-token"))
-        .map_err(|_| ApiError::forbidden())?;
-    if digest(input.setup_token.trim()) != digest(expected.trim()) {
-        return Err(ApiError::forbidden());
-    }
-    let hashed = tokio::task::spawn_blocking(move || {
-        Argon2::default()
-            .hash_password(
-                input.password.as_bytes(),
-                &SaltString::generate(&mut CryptoRng),
-            )
-            .map(|p| p.to_string())
-            .map_err(|_| ApiError::internal("No se pudo guardar la contraseña"))
-    })
-    .await
-    .map_err(|_| ApiError::internal("Registro interrumpido"))??;
-    let id = new_id();
-    let uid = id.clone();
-    s.db.call(move |c| {
-        let tx = c.transaction()?;
-        let count: i64 = tx.query_row("SELECT count(*) FROM users", [], |r| r.get(0))?;
-        if count > 0 {
-            return Err(ApiError::forbidden());
-        }
-        tx.execute(
-            "INSERT INTO users VALUES(?,?,?,1)",
-            params![uid, input.username.trim(), hashed],
-        )?;
-        tx.execute(
-            "INSERT OR REPLACE INTO meta VALUES('server_name',?)",
-            [input.server_name.trim()],
-        )?;
-        tx.commit()?;
-        Ok(())
-    })
-    .await?;
-    let _ = std::fs::remove_file(s.config.data.join("bootstrap-token"));
-    start_session(&s, id).await
-}
-#[derive(Deserialize)]
-struct Login {
-    username: String,
-    password: String,
-}
-async fn login(
-    State(s): State<AppState>,
-    headers: axum::http::HeaderMap,
-    Json(input): Json<Login>,
-) -> Result<Response, ApiError> {
-    if headers.get("x-soto-request").and_then(|v| v.to_str().ok()) != Some("1") {
-        return Err(ApiError::forbidden());
-    }
-    if input.username.len() > 160 || input.password.len() > 1024 {
-        return Err(ApiError::unauthorized());
-    }
-    {
-        let mut attempts = s
-            .attempts
-            .lock()
-            .map_err(|_| ApiError::internal("Acceso ocupado"))?;
-        attempts.retain(|_, v| now() - v.1 < 60);
-        if attempts.len() > 1000 {
-            return Err(ApiError(
-                StatusCode::TOO_MANY_REQUESTS,
-                "rate_limit",
-                "Espera antes de volver a intentar".into(),
-            ));
-        }
-        let entry = attempts
-            .entry(input.username.trim().to_string())
-            .or_insert((0, now()));
-        entry.0 += 1;
-        if entry.0 > 10 {
-            return Err(ApiError(
-                StatusCode::TOO_MANY_REQUESTS,
-                "rate_limit",
-                "Espera un minuto".into(),
-            ));
-        }
-    }
-    let user: Option<(String, String)> =
-        s.db.call(move |c| {
-            Ok(c.query_row(
-                "SELECT id,password_hash FROM users WHERE username=?",
-                [input.username.trim()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?)
-        })
-        .await?;
-    let (id, hash) = user.ok_or_else(ApiError::unauthorized)?;
-    let valid = tokio::task::spawn_blocking(move || {
-        PasswordHash::new(&hash).is_ok_and(|h| {
-            Argon2::default()
-                .verify_password(input.password.as_bytes(), &h)
-                .is_ok()
-        })
-    })
-    .await
-    .unwrap_or(false);
-    if !valid {
-        return Err(ApiError::unauthorized());
-    }
-    start_session(&s, id).await
-}
-async fn session(
-    State(s): State<AppState>,
-    Extension(u): Extension<User>,
-) -> Result<Json<Value>, ApiError> {
-    Ok(Json(
-        json!({"id":u.id,"username":u.username,"admin":u.admin,"server_name":s.setting("server_name").await?.unwrap_or_else(||"Soto".into())}),
-    ))
-}
-async fn logout(State(s): State<AppState>, req: Request) -> Result<Response, ApiError> {
-    if let Some(t) = req
-        .headers()
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|c| {
-            c.split(';')
-                .map(str::trim)
-                .find_map(|v| v.strip_prefix("soto_session="))
-        })
-    {
-        let hash = digest(t);
-        s.db.call(move |c| {
-            c.execute("DELETE FROM sessions WHERE token_hash=?", [hash])?;
-            Ok(())
-        })
-        .await?
-    }
-    let mut r = Json(json!({"ok":true})).into_response();
-    r.headers_mut()
-        .insert(header::SET_COOKIE, cookie(&s, "", true));
-    Ok(r)
-}
-pub fn public_routes() -> Router<AppState> {
-    Router::new()
-        .route("/setup", get(setup_status).post(setup))
-        .route("/session", post(login))
-}
-pub fn session_routes() -> Router<AppState> {
-    Router::new().route("/session", get(session).delete(logout))
 }

@@ -2,7 +2,6 @@ use crate::app::{ApiError, AppState, finish_job, job, job_value, new_id, now};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    middleware,
     routing::{get, post},
 };
 use rusqlite::{OptionalExtension, params};
@@ -439,7 +438,6 @@ pub fn routes() -> Router<AppState> {
         .route("/libraries", get(list).post(add))
         .route("/libraries/{id}", axum::routing::delete(delete))
         .route("/libraries/{id}/scan", post(scan))
-        .route_layer(middleware::from_fn(crate::app::administrator))
 }
 
 pub async fn recover(s: &AppState) -> Result<(), ApiError> {

@@ -1,0 +1,16 @@
+[package]
+name = "soto-web"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+soto-core = { path = "../soto-core" }
+dioxus = { version = "=0.7.10", default-features = false, features = ["minimal", "asset", "cli-config", "web"] }
+gloo-events = "0.2"
+web-sys = { version = "0.3", features = ["Window", "Document", "Location", "Storage", "Element", "HtmlElement", "HtmlInputElement", "HtmlDialogElement", "KeyboardEvent", "DomRect", "NodeList", "History", "MediaQueryList"] }
+wasm-bindgen = "0.2"
+serde_json = "1"
+
+[dev-dependencies]
+dioxus-ssr = "=0.7.10"

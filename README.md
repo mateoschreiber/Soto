@@ -2,7 +2,70 @@
 
 Aplicación multimedia para un homelab: biblioteca de archivos locales, descubrimiento de películas y series, fuentes de torrents y conexión a Real-Debrid, con una interfaz web y un futuro cliente instalable en Android TV.
 
-**Estado: planificación.** Este repositorio contiene el diseño del proyecto y su configuración propuesta. Todavía no contiene una aplicación ejecutable, imágenes Docker, APK ni integraciones implementadas. Los nombres de módulos y variables de este documento forman el contrato inicial de implementación; podrán ajustarse de forma documentada antes de cada etapa.
+**Estado: etapa 1, interfaz de demostración en Rust.** Incluye navegación, bibliotecas separadas, búsqueda, fichas, colecciones de ejemplo, estados visuales, vista TV web y servidor estático para Docker. No hay escaneo de archivos, autenticación, reproducción de películas, descargas, Real-Debrid conectado ni APK. Las siguientes etapas siguen pendientes.
+
+Todo el código propio de aplicación y pruebas está escrito en Rust. Dioxus compila la interfaz a WebAssembly y genera los enlaces JavaScript necesarios para el navegador. CSS y archivos declarativos configuran la presentación y el despliegue; no hay una aplicación React, TypeScript o Node.js.
+
+## Ejecutar la primera etapa
+
+### Homelab con Docker
+
+Con Docker Engine y Compose disponibles, desde la raíz del repositorio:
+
+```sh
+docker compose up -d --build
+docker compose ps
+```
+
+Abrir [Soto local](http://127.0.0.1:3000). La primera compilación descarga las herramientas Rust y Dioxus. El contenedor final incluye únicamente el binario, sus bibliotecas del sistema y los recursos compilados; no incluye Cargo, compiladores ni Node.js.
+
+El puerto se publica en `127.0.0.1` por defecto. Para acceder desde la LAN, utiliza un proxy inverso con HTTPS o una modificación explícita de `ports` en tu instalación. Esta etapa solo expone datos de demostración y no solicita credenciales ni monta carpetas multimedia.
+
+```sh
+docker compose logs --tail=50 web
+docker compose down
+```
+
+### Desarrollo local en Rust
+
+Instalar Rust con rustup y [Dioxus CLI 0.7.10](https://github.com/DioxusLabs/dioxus/releases/tag/v0.7.10). `rust-toolchain.toml` fija Rust 1.99.1, LLVM y el destino WebAssembly. En Windows, Rust también requiere el enlazador de su toolchain: Visual Studio Build Tools para MSVC o GCC/MinGW para GNU.
+
+```sh
+dx serve -p soto-web --platform web
+```
+
+Para compilar y servir la misma interfaz con Axum:
+
+```sh
+dx build -p soto-web --platform web --profile wasm-release --release --locked
+cargo run --release --locked -p soto-server
+```
+
+Abrir [Soto local](http://127.0.0.1:3000). La ruta de salida se puede cambiar mediante `SOTO_STATIC_DIR`.
+
+### Comprobaciones
+
+```sh
+cargo fmt --all --check
+cargo test --locked -p soto-core -p soto-server
+cargo clippy --locked -p soto-core -p soto-server --all-targets -- -D warnings
+cargo clippy --locked -p soto-web --target wasm32-unknown-unknown -- -D warnings
+```
+
+Las pruebas de Rust cubren orígenes, filtros, enlaces, preferencias, foco espacial, estado del servidor y cabeceras HTTP. La revisión visual y los recorridos de navegador se describen en [la verificación de la etapa 1](docs/stage-1-verification.md).
+
+### Configuración implementada
+
+| Variable | Valor predeterminado | Alcance |
+| --- | --- | --- |
+| `SOTO_BIND` | `127.0.0.1:3000` | Escucha del servidor; Compose usa `0.0.0.0:3000` dentro del contenedor |
+| `SOTO_STATIC_DIR` | `target/dx/soto-web/release/web/public` | Recursos compilados; Docker usa `/app/public` |
+| `SOTO_PORT` | `3000` | Puerto publicado por Compose, no cambia el puerto interno |
+| `RUST_LOG` | `soto_server=info,tower_http=warn` | Registro del servidor |
+
+`GET /api/health` devuelve la etapa y confirma que los servicios multimedia no están conectados. Los demás endpoints de la API no están implementados y responden 404.
+
+Las preferencias, el perfil de demostración y las colecciones se guardan en el navegador, con formato versionado y recuperación ante datos corruptos. No son cuentas reales y las colecciones de ejemplo no están aisladas por perfil. En Servidor puedes activar la vista TV, desactivar imágenes remotas y explorar estados de carga, vacío, error o desconexión. Las imágenes de la maqueta se solicitan a Metahub y no se redistribuyen; sin conexión se muestran fondos alternativos propios.
 
 ## Objetivo
 
@@ -59,37 +122,33 @@ Navegador / cliente Android TV
 
 | Módulo | Responsabilidad | Tecnología propuesta |
 | --- | --- | --- |
-| Web | Interfaz, navegación, estados y controles de reproducción | React, TypeScript y Vite |
-| API | Sesiones, permisos, bibliotecas, fuentes y contratos de clientes | TypeScript y Fastify |
-| Persistencia | Perfiles, metadatos, colecciones, trabajos y progreso | SQLite con migraciones |
-| Trabajos | Escaneo, actualización de metadatos y tareas multimedia | Worker separado con trabajos persistentes |
+| Web | Interfaz, navegación, estados y controles de reproducción | Rust, Dioxus y WebAssembly |
+| API | Sesiones, permisos, bibliotecas, fuentes y contratos de clientes | Rust, Axum y Tokio |
+| Persistencia | Perfiles, metadatos, colecciones, trabajos y progreso | SQLite y migraciones desde Rust; pendiente |
+| Trabajos | Escaneo, actualización de metadatos y tareas multimedia | Worker Rust separado con trabajos persistentes; pendiente |
 | Multimedia | Inspección de formatos y conversión cuando sea necesaria | FFprobe y FFmpeg |
-| Conectores | Adaptadores independientes para cada servicio | Interfaces tipadas en el servidor |
-| Android TV | Aplicación instalable, mando y reproducción nativa | Kotlin y Media3; reutilización de interfaz por validar |
+| Conectores | Adaptadores independientes para cada servicio | Traits y contratos Rust en el servidor; pendiente |
+| Android TV | Aplicación instalable, mando y reproducción nativa | Rust y Dioxus; integración con el SDK Android por validar |
 | Despliegue | Servicios, volúmenes y actualizaciones del homelab | Docker Compose |
 
-Las versiones concretas y el gestor de paquetes se fijarán al iniciar la implementación y quedarán registrados en el lockfile. No se adoptarán automáticamente nuevas versiones mayores.
+Cargo gestiona el workspace. Las dependencias resueltas están fijadas en `Cargo.lock` y la toolchain en `rust-toolchain.toml`. No se adoptarán automáticamente nuevas versiones mayores. El SDK Android y las herramientas multimedia externas se integrarán desde Rust cuando llegue su etapa.
 
-La estrategia de reutilización de la interfaz en Android TV se validará con una prueba de navegación y reproducción. El cliente podrá reutilizar la web mediante un contenedor y un puente de reproducción si la prueba lo permite; en caso contrario se implementará la capa de presentación nativa manteniendo los contratos de la API. Una PWA no sustituye al APK de Android TV.
+La reutilización de Dioxus en Android TV se validará con una prueba de navegación y reproducción. El puente al reproductor del dispositivo se definirá desde Rust y el SDK Android. La vista TV web actual no sustituye al APK ni verifica su compatibilidad.
 
-### Estructura futura
+### Estructura
 
 ```text
-apps/
-  web/                 Interfaz web
-  api/                 API y sesiones
-  worker/              Trabajos en segundo plano
-  android-tv/          Cliente instalable
-packages/
-  contracts/           Esquemas de API y tipos compartidos
-  ui/                  Componentes y tokens visuales
-  connectors/          Adaptadores de catálogo y fuentes
-deploy/                Docker, proxy y ejemplos de despliegue
-docs/                  Decisiones, contratos y operación
-tests/                 Integración y recorridos de usuario
+crates/
+  soto-core/           Dominio, orígenes, navegación y preferencias
+  soto-web/            Componentes Rust, estado de la interfaz y CSS
+  soto-server/         Axum, archivos estáticos y comprobación de salud
+docs/                  Plan y resultados de verificación
+Dockerfile             Compilación y runtime separados
+compose.yaml           Despliegue limitado al puerto local
+.github/workflows/     Comprobaciones automatizadas
 ```
 
-Estas carpetas todavía no se han generado.
+Los workers, conectores, persistencia del homelab y el cliente Android se incorporarán en sus etapas, sin generar módulos vacíos ni dependencias innecesarias anticipadamente.
 
 ## Modelo de datos y contratos
 
@@ -113,7 +172,7 @@ Los esquemas de solicitudes, respuestas, paginación y errores se documentarán 
 
 ## Configuración del homelab
 
-**Configuración prevista; aún no implementada.** No hay comandos de instalación disponibles en esta etapa. El despliegue deberá proporcionar:
+**Configuración futura para multimedia; aún no implementada.** La interfaz se ejecuta con los comandos anteriores. Al incorporar bibliotecas y servicios, el despliegue deberá proporcionar:
 
 1. Un host con Docker y Compose, espacio para datos persistentes y acceso a las carpetas multimedia.
 2. Un volumen escribible para la base de datos y la configuración.
@@ -127,8 +186,6 @@ Los esquemas de solicitudes, respuestas, paginación y errores se documentarán 
 
 | Variable | Valor inicial o formato | Uso |
 | --- | --- | --- |
-| `SOTO_HOST` | `127.0.0.1` fuera de Docker | Dirección de escucha; dentro del contenedor podrá ser `0.0.0.0` |
-| `SOTO_PORT` | `3000` | Puerto interno de la API y la web |
 | `SOTO_PUBLIC_URL` | `https://soto.example.com` | URL real configurada por el administrador |
 | `SOTO_DATA_DIR` | `/data` | Base de datos y configuración persistentes |
 | `SOTO_LOCAL_ROOTS` | `["/media/local"]` | Lista JSON de directorios permitidos para Local |
@@ -137,7 +194,6 @@ Los esquemas de solicitudes, respuestas, paginación y errores se documentarán 
 | `SOTO_SESSION_SECRET_FILE` | `/run/secrets/soto_session` | Archivo de secreto para sesiones |
 | `SOTO_REALDEBRID_TOKEN_FILE` | `/run/secrets/realdebrid_token` | Token del proveedor, opcional y solo en el servidor |
 | `SOTO_TRUST_PROXY` | `false` | Activar únicamente con la cadena de proxies definida |
-| `SOTO_LOG_LEVEL` | `info` | Nivel de registro sin secretos ni enlaces privados |
 | `TZ` | `America/Asuncion` | Zona horaria de operación |
 
 Los valores son ejemplos. La URL, las rutas y los secretos se adaptarán a cada instalación. No se guardarán tokens, contraseñas ni archivos `.env` reales en Git. Los proveedores de catálogo y de torrents se configurarán mediante adaptadores explícitos; no se incluirá un proveedor arbitrario como dependencia obligatoria.
@@ -179,9 +235,15 @@ El servicio no se expondrá directamente a Internet por defecto. La primera conf
 
 Cada etapa entregará funcionalidad verificable. No se marcará una integración como operativa únicamente por mostrar su pantalla.
 
+## Rendimiento y Docker
+
+La primera etapa usa un único proceso Axum con runtime asíncrono de un hilo para servir archivos y salud. No hay base de datos, escaneos ni trabajo periódico. La compilación de release aplica LTO, elimina símbolos y ofrece un perfil WebAssembly orientado al tamaño. Los recursos tienen nombres con hash, caché inmutable y versiones gzip precomprimidas en Docker; el HTML se sirve sin caché persistente.
+
+Compose limita el runtime a 128 MiB, 0,5 CPU y 64 procesos, utiliza un usuario sin privilegios, filesystem de solo lectura y elimina capabilities. Estos límites corresponden a la demostración; los workers multimedia necesitarán presupuestos propios medidos con archivos reales. El rendimiento se documentará con su entorno y medición, sin afirmar una optimización máxima no demostrada.
+
 ## Pruebas y GitHub
 
-Al incorporar código, GitHub Actions ejecutará comprobación de tipos, análisis estático, pruebas y compilación. Las credenciales personales no se necesitarán para las pruebas normales: los proveedores se probarán con respuestas controladas y habrá pruebas reales optativas para el propietario.
+GitHub Actions comprobará formato, Clippy, pruebas, compilación WebAssembly y arranque de Docker. Las credenciales personales no se necesitarán para las pruebas normales: los futuros proveedores se probarán con respuestas controladas y habrá pruebas reales optativas para el propietario.
 
 Recorridos prioritarios: mantener el origen al descargar, buscar en cada espacio, reproducir y reanudar, cancelar un trabajo, recuperar un reinicio, rechazar acceso no autorizado y navegar con mando. Se revisarán escritorio, móvil y TV, además de formatos y dispositivos reales para las capacidades multimedia.
 
@@ -197,8 +259,9 @@ La rama principal será `main`; los cambios de implementación se propondrán en
 
 ## Referencias técnicas
 
-- [React: sincronización con sistemas externos](https://react.dev/reference/react/useEffect)
-- [Node.js: servidor HTTP](https://nodejs.org/api/http.html)
+- [Dioxus: interfaz y estado en Rust](https://dioxuslabs.com/learn/0.7/)
+- [Axum: servidor HTTP](https://docs.rs/axum/latest/axum/)
+- [Docker: compilación en varias etapas](https://docs.docker.com/build/building/multi-stage/)
 - [Real-Debrid: documentación de la API](https://api.real-debrid.com/)
 - [Stremio: contrato de catálogos](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/api/requests/defineCatalogHandler.md)
 

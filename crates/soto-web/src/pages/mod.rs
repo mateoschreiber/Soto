@@ -65,6 +65,7 @@ pub fn ApiForm(
     let mut error = use_signal(|| None::<String>);
     let mut cx = use_context::<AppContext>();
     let submitted_fields = fields.clone();
+    let setup_form = path.ends_with("/setup");
     let submit = move |e: FormEvent| {
         e.prevent_default();
         if busy() {
@@ -137,7 +138,7 @@ pub fn ApiForm(
         }else if f.kind=="checkbox"{
          input{r#type:"checkbox",checked:values.read().get(&f.key).is_some_and(|s|s=="true"),onchange:{let key=f.key.clone();move|e|{values.write().insert(key.clone(),e.value());}}}
         }else{
-         input{r#type:if f.kind=="ids"{"text"}else{f.kind.as_str()},name:"{f.key}",required:f.required,value:values.read().get(&f.key).cloned().unwrap_or_default(),minlength:if f.key=="password"{"12"}else{"0"},maxlength:if f.kind=="password"{"1024"}else{"8192"},oninput:{let key=f.key.clone();move|e|{values.write().insert(key.clone(),e.value());}}}
+         input{r#type:if f.kind=="ids"{"text"}else{f.kind.as_str()},name:"{f.key}",autocomplete:if f.key=="username"{"username"}else if f.key=="password"&&setup_form{"new-password"}else if f.key=="password"{"current-password"}else{"off"},required:f.required,value:values.read().get(&f.key).cloned().unwrap_or_default(),minlength:if f.key=="password"{"12"}else{"0"},maxlength:if f.kind=="password"{"1024"}else{"8192"},oninput:{let key=f.key.clone();move|e|{values.write().insert(key.clone(),e.value());}}}
         }
        }
       }
@@ -171,7 +172,7 @@ pub fn Auth(configured: bool, on_authenticated: EventHandler) -> Element {
 pub fn RouteView() -> Element {
     let cx = use_context::<AppContext>();
     let route = cx.route.read().clone();
-    rsx! {a{class:"skip",href:"#page-title","Saltar al contenido"}div{class:"functional-heading",span{class:"eyebrow","TU BIBLIOTECA, EN TU HOMELAB"}h1{id:"page-title",tabindex:"-1","{page_title(route.page,route.origin)}"}}match route.page {Page::Home|Page::Library|Page::Search|Page::Collections=>rsx!{Catalog{key:"{route.href()}",route:route.clone()}if route.page==Page::Home{ContinueWatching{}}if route.page==Page::Library&&route.origin==Origin::Torrent{Torrents{}}},Page::Detail|Page::Sources=>rsx!{MediaDetail{key:"{route.href()}",id:route.id.unwrap_or_default()}},Page::Server=>rsx!{Admin{}},Page::Providers=>rsx!{Providers{}},Page::Queue=>rsx!{Records{path:"/jobs",kind:"jobs"}},Page::Profiles=>rsx!{Records{path:"/profiles",kind:"profiles"}ApiForm{title:"Crear perfil",path:"/profiles",fields:vec![field("name","Nombre","text")]}},Page::Devices=>rsx!{EmptyState{title:"Modo TV",message:"Activa Modo TV en la barra superior. Usa las flechas para navegar, Intro para elegir y Escape para volver."}},_=>rsx!{EmptyState{title:"Página no encontrada",message:"Usa la navegación para volver a tu biblioteca."}}}}
+    rsx! {a{class:"skip",href:"#page-title","Saltar al contenido"}if route.page!=Page::Home{div{class:"functional-heading",span{class:"eyebrow","TU BIBLIOTECA, EN TU HOMELAB"}h1{id:"page-title",tabindex:"-1","{page_title(route.page,route.origin)}"}}}match route.page {Page::Home|Page::Library|Page::Search|Page::Collections=>rsx!{Catalog{key:"{route.href()}",route:route.clone()}if route.page==Page::Home{ContinueWatching{}}if route.page==Page::Library&&route.origin==Origin::Torrent{Torrents{}}},Page::Detail|Page::Sources=>rsx!{MediaDetail{key:"{route.href()}",id:route.id.unwrap_or_default()}},Page::Server=>rsx!{Admin{}},Page::Providers=>rsx!{Providers{}},Page::Queue=>rsx!{Records{path:"/jobs",kind:"jobs"}},Page::Profiles=>rsx!{Records{path:"/profiles",kind:"profiles"}ApiForm{title:"Crear perfil",path:"/profiles",fields:vec![field("name","Nombre","text")]}},Page::Devices=>rsx!{EmptyState{title:"Modo TV",message:"Activa Modo TV en la barra superior. Usa las flechas para navegar, Intro para elegir y Escape para volver."}},_=>rsx!{EmptyState{title:"Página no encontrada",message:"Usa la navegación para volver a tu biblioteca."}}}}
 }
 fn page_title(page: Page, origin: Origin) -> &'static str {
     match page {
@@ -211,8 +212,68 @@ fn Catalog(route: Route) -> Element {
             request::<Vec<Media>>("GET", &path, None).await
         }
     });
-    rsx! {div{class:"functional-actions",label{"Mostrar " select{value:"{kind}",onchange:move|e|kind.set(e.value()),option{value:"all","Todo"}option{value:"movie","Películas"}option{value:"series","Series"}}}button{class:"button secondary",onclick:move |_|data.restart(),"Actualizar"}}
-    match &*data.read(){None=>rsx!{EmptyState{title:"Cargando biblioteca…",message:"Consultando el servidor."}},Some(Err(e))=>rsx!{EmptyState{title:"No se pudo cargar",message:e.message.clone()}},Some(Ok(items)) if items.is_empty()=>rsx!{EmptyState{title:"Todavía no hay contenido",message:if route.page==Page::Collections{"Añade títulos a tus colecciones desde su detalle."}else{"Añade una biblioteca y escanéala, o importa un torrent. Si usaste filtros, prueba otra búsqueda."}}a{class:"button",href:"#/local/server","Administrar bibliotecas"}},Some(Ok(items))=>rsx!{div{class:"poster-grid",for item in items{MediaCard{item:item.clone()}}}}}
+    rsx! {
+      match &*data.read() {
+        None => rsx! { EmptyState { title:"Cargando biblioteca…", message:"Consultando el servidor." } },
+        Some(Err(e)) => rsx! { EmptyState { title:"No se pudo cargar", message:e.message.clone() } },
+        Some(Ok(items)) if items.is_empty() => rsx! {
+          if route.page==Page::Home { h1 { id:"page-title", tabindex:"-1", class:"empty-page-title", "Tu biblioteca" } }
+          EmptyState {
+            title:if route.page==Page::Collections {"Tu colección está vacía"} else if route.page==Page::Search {"No hay resultados"} else if route.origin==Origin::Torrent {"Sin títulos disponibles"} else {"Tu biblioteca está vacía"},
+            message:if route.page==Page::Collections {"Guarda títulos desde su ficha para tenerlos a mano."} else if route.page==Page::Search {"Prueba con otro título o revisa el origen seleccionado."} else if route.origin==Origin::Torrent {"Instala un proveedor o importa un magnet desde la sección Torrents."} else {"Conecta una carpeta desde Servidor y escanéala. Tus archivos aparecerán aquí."}
+          }
+          if route.page!=Page::Collections {
+            div { class:"catalog-empty-actions",
+              if route.origin==Origin::Torrent {a{class:"button",href:"#/local/providers","Configurar proveedores"}} else {a{class:"button",href:"#/local/server","Administrar bibliotecas"}}
+            }
+          }
+        },
+        Some(Ok(items)) => rsx! {
+          if route.page==Page::Home { Feature { item:items.iter().find(|item|item.poster.is_some()).unwrap_or(&items[0]).clone() } }
+          if route.page==Page::Home {
+            nav { class:"categories", "aria-label":"Filtrar catálogo",
+              for (value,icon,label) in [("all","home","Todo"),("movie","film","Películas"),("series","tv","Series")] {
+                button { class:"category", "aria-pressed":kind()==value, onclick:move |_|kind.set(value.to_string()), Icon{name:icon,size:38}, span{"{label}"} }
+              }
+            }
+          } else {
+            div { class:"functional-actions catalog-toolbar",
+              label { class:"catalog-filter", "Mostrar ", select { value:"{kind}", onchange:move|e|kind.set(e.value()), option{value:"all","Todo"} option{value:"movie","Películas"} option{value:"series","Series"} } }
+              button { class:"icon-button", "aria-label":"Actualizar catálogo", onclick:move |_|data.restart(), Icon{name:"arrow",size:24} }
+            }
+          }
+          section { class:"shelves",
+            div { class:"shelf-heading", h2{if route.page==Page::Search{"Resultados de búsqueda"}else if route.page==Page::Collections{"Guardados"}else if route.origin==Origin::Torrent{"Descubrimiento"}else{"Añadidas recientemente"}}, span { class:"catalog-count", "{items.len()} títulos" } }
+            div { class:"poster-grid", for item in items { MediaCard { item:item.clone() } } }
+          }
+        }
+      }
+    }
+}
+
+#[component]
+fn Feature(item: Media) -> Element {
+    let origin = if item.origin == "torrent" {
+        Origin::Torrent
+    } else {
+        Origin::Local
+    };
+    let route = Route::media(origin, Page::Detail, &item.id).href();
+    rsx! {
+      section { class:"hero", "aria-label":"Título destacado",
+        div { class:"hero-art",
+          if item.poster.is_some() { img { src:format!("/api/v1/catalog/{}/poster",segment(&item.id)), alt:"", fetchpriority:"high" } }
+          else { div { class:"hero-art-placeholder", "aria-hidden":"true" } }
+        }
+        div { class:"hero-copy",
+          div { class:"hero-tags", span { class:"pill green", if origin==Origin::Torrent {"Torrents"} else {"En tu biblioteca"} } }
+          h1 { id:"page-title", tabindex:"-1", "{item.title}" }
+          p { class:"hero-meta", "{metadata(&item)}" }
+          if let Some(description)=item.description.as_deref().filter(|s|!s.is_empty()) { p { class:"hero-description", "{description}" } }
+          div { class:"actions", a { class:"button", href:route.clone(), Icon{name:"play",size:20}, "Ver título" } }
+        }
+        a { class:"hero-play", href:route, "aria-label":"Abrir ficha de {item.title}", Icon{name:"play",size:34} }
+      }
     }
 }
 #[component]
@@ -222,7 +283,23 @@ fn MediaCard(item: Media) -> Element {
     } else {
         Origin::Local
     };
-    rsx! {a{class:"poster",id:"media-{item.id}",href:Route::media(origin,Page::Detail,&item.id).href(),div{class:"art functional-art",if item.poster.is_some(){img{src:format!("/api/v1/catalog/{}/poster",segment(&item.id)),alt:item.title.clone(),loading:"lazy"}}else{Icon{name:"film",size:48}}}div{class:"poster-footer",div{class:"poster-title",strong{"{item.title}"}small{if let Some(year)=item.year{"{year} · "}"{item.origin} · {item.source_count} fuente(s)"}}}}}
+    rsx! {
+      a { class:"poster", id:"media-{item.id}", href:Route::media(origin,Page::Detail,&item.id).href(),
+        div { class:"art functional-art",
+          if item.poster.is_some() { img { src:format!("/api/v1/catalog/{}/poster",segment(&item.id)), alt:"", loading:"lazy" } }
+          else { Icon{name:"film",size:48} }
+          span { class:"poster-origin", if origin==Origin::Torrent {"TORRENTS"} else {"LOCAL"} }
+          if item.source_count>0 { span { class:"poster-source-count", "{item.source_count} fuentes" } }
+        }
+        div { class:"poster-footer",
+          div { class:"poster-title", strong {"{item.title}"}, small {
+            if let Some(year)=item.year {"{year} · "}
+            "{item.kind} · {item.source_count} fuente(s)"
+          } }
+          Icon { name:"arrow", size:18 }
+        }
+      }
+    }
 }
 #[component]
 fn MediaDetail(id: String) -> Element {
@@ -516,5 +593,5 @@ fn ContinueWatching() -> Element {
         let _ = (cx.revision)();
         async move { request::<Vec<Value>>("GET", "/progress", None).await }
     });
-    rsx! {section{class:"functional-panel",h2{"Continuar viendo"}match &*progress.read(){None=>rsx!{p{role:"status","Cargando progreso…"}},Some(Err(e))=>rsx!{p{role:"alert","{e.message}"}button{class:"button secondary",onclick:move |_|progress.restart(),"Reintentar"}},Some(Ok(rows)) if rows.is_empty()=>rsx!{p{"Tu progreso aparecerá aquí cuando reproduzcas un título."}},Some(Ok(rows))=>rsx!{for row in rows{a{class:"button secondary",href:format!("#/local/detail/{}",segment(&text(row,"media_id"))),{format!("Continuar · {} · {:.0} min",text(row,"media_id"),row["position"].as_f64().unwrap_or(0.) / 60.)}}}}}}}
+    rsx! {match &*progress.read(){None=>rsx!{p{role:"status","Cargando progreso…"}},Some(Err(e))=>rsx!{p{role:"alert","{e.message}"}button{class:"button secondary",onclick:move |_|progress.restart(),"Reintentar"}},Some(Ok(rows)) if rows.is_empty()=>rsx!{},Some(Ok(rows))=>rsx!{section{class:"shelves",div{class:"shelf-heading",h2{"Continuar viendo"}}div{class:"continue-list",for row in rows{a{class:"button secondary",href:format!("#/local/detail/{}",segment(&text(row,"media_id"))),{format!("Continuar · {} · {:.0} min",text(row,"media_id"),row["position"].as_f64().unwrap_or(0.) / 60.)}}}}}}}}
 }

@@ -1,3 +1,6 @@
+#[path = "fixtures/demo.rs"]
+mod demo;
+use demo::{demo_media, demo_sources};
 use soto_core::*;
 
 #[test]

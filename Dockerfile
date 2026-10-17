@@ -16,11 +16,12 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml Dioxus.toml ./
 COPY crates ./crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --locked --release -p soto-server \
+    cargo build --locked --release -p soto-server --bins \
     && rm -rf /src/target/dx/soto-web/release/web/public \
     && dx build -p soto-web --platform web --profile wasm-release --release --locked \
     && mkdir -p /out/public \
     && cp target/release/soto-server /out/soto-server \
+    && cp target/release/soto-worker /out/soto-worker \
     && cp -r target/dx/soto-web/release/web/public/. /out/public/ \
     && find /out/public -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.css' \) -exec gzip -9 -k {} \;
 
@@ -28,17 +29,32 @@ FROM debian:trixie-slim AS runtime
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Soto" \
-    org.opencontainers.image.description="Rust homelab media interface — stage 1 demonstration" \
+    org.opencontainers.image.description="Rust homelab media server" \
     org.opencontainers.image.source="https://github.com/mateoschreiber/Soto" \
     org.opencontainers.image.licenses="MIT" \
     org.opencontainers.image.version="$VERSION" \
     org.opencontainers.image.revision="$REVISION"
-RUN groupadd --gid 10001 soto && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin soto
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd --gid 10001 soto && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin soto \
+    && mkdir -p /data /run/soto /torrents /cache /media/local \
+    && chown -R 10001:10001 /data /run/soto /torrents /cache
 WORKDIR /app
-COPY --from=build /out/ /app/
+COPY --from=build /out/soto-server /app/soto-server
+COPY --from=build /out/public/ /app/public/
 COPY LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.json /app/licenses/
 USER 10001:10001
-ENV SOTO_BIND=0.0.0.0:3000 SOTO_STATIC_DIR=/app/public RUST_LOG=soto_server=info,tower_http=warn
+ENV SOTO_BIND=0.0.0.0:3000 SOTO_STATIC_DIR=/app/public SOTO_DATA_DIR=/data SOTO_WORKER_TOKEN_FILE=/run/soto/worker-token SOTO_TORRENTS_DIR=/torrents SOTO_CACHE_DIR=/cache RUST_LOG=soto_server=info,tower_http=warn
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/app/soto-server", "--healthcheck"]
 ENTRYPOINT ["/app/soto-server"]
+
+FROM runtime AS worker
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/soto-worker /app/soto-worker
+USER 10001:10001
+ENV SOTO_WORKER_BIND=0.0.0.0:3002 RUST_LOG=soto_server=info,librqbit=error
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD ["/app/soto-worker", "--healthcheck"]
+ENTRYPOINT ["/app/soto-worker"]

@@ -1,100 +1,75 @@
+use crate::api::{Playback, Session};
 use dioxus::prelude::*;
 use soto_core::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum DemoState {
-    #[default]
-    Ready,
-    Loading,
-    Empty,
-    Error,
-    Offline,
-}
-impl DemoState {
-    pub fn parse(s: &str) -> Self {
-        match s {
-            "loading" => Self::Loading,
-            "empty" => Self::Empty,
-            "error" => Self::Error,
-            "offline" => Self::Offline,
-            _ => Self::Ready,
-        }
-    }
+#[derive(Clone, Default)]
+pub struct UiPreferences {
+    pub tv: bool,
 }
 #[derive(Clone, PartialEq)]
 pub struct DialogInfo {
     pub title: String,
     pub message: String,
 }
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Clone)]
 pub struct AppContext {
     pub route: Signal<Route>,
-    pub preferences: Signal<Preferences>,
-    pub genre: Signal<String>,
-    pub kind: Signal<String>,
-    pub demo_state: Signal<DemoState>,
+    pub preferences: Signal<UiPreferences>,
     pub modal: Signal<Option<DialogInfo>>,
-    pub storage_warning: Signal<bool>,
-    pub media: Rc<Vec<MediaItem>>,
-    pub sources: Rc<Vec<MediaSource>>,
+    pub session: Signal<Option<Session>>,
+    pub revision: Signal<u64>,
+    pub player: Signal<Option<(Playback, String)>>,
     pub focus_history: Rc<RefCell<HashMap<String, String>>>,
 }
-impl AppContext {
-    pub fn available(&self) -> Vec<MediaItem> {
-        filter_media(
-            &self.media,
-            &self.sources,
-            self.route.read().origin,
-            "",
-            &self.genre.read(),
-            &self.kind.read(),
-        )
-        .into_iter()
-        .cloned()
-        .collect()
-    }
-}
-pub fn pending(mut modal: Signal<Option<DialogInfo>>, title: &str, message: &str) {
-    modal.set(Some(DialogInfo {
-        title: title.into(),
-        message: message.into(),
-    }));
-}
 pub fn navigate(route: Route) {
+    #[cfg(target_arch = "wasm32")]
     if let Some(w) = web_sys::window() {
         let _ = w.location().set_hash(&route.href());
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = route;
 }
-pub fn load_preferences() -> Preferences {
-    web_sys::window()
-        .and_then(|w| w.local_storage().ok().flatten())
-        .and_then(|s| s.get_item("soto.preferences.v1").ok().flatten())
-        .map(|s| Preferences::from_json(&s))
-        .unwrap_or_default()
+pub fn load_preferences() -> UiPreferences {
+    let p = UiPreferences::default();
+    #[cfg(target_arch = "wasm32")]
+    let mut p = p;
+    #[cfg(target_arch = "wasm32")]
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        p.tv = storage
+            .get_item("soto.tv")
+            .ok()
+            .flatten()
+            .map(|v| v == "true")
+            .or_else(|| {
+                storage
+                    .get_item("soto.preferences.v1")
+                    .ok()
+                    .flatten()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .and_then(|v| v["tv"].as_bool())
+            })
+            .unwrap_or(false);
+        let _ = storage.remove_item("soto.preferences.v1");
+        let _ = storage.set_item("soto.tv", if p.tv { "true" } else { "false" });
+    }
+
+    p
 }
-pub fn persist(p: &Preferences) -> bool {
-    let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
-        return false;
-    };
-    serde_json::to_string(p)
-        .ok()
-        .is_some_and(|value| s.set_item("soto.preferences.v1", &value).is_ok())
+pub fn persist(p: &UiPreferences) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = s.set_item("soto.tv", if p.tv { "true" } else { "false" });
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = p;
 }
+#[cfg(target_arch = "wasm32")]
 pub fn go_back(cx: &AppContext) {
-    if cx.modal.read().is_some() {
-        let mut modal = cx.modal;
+    let mut modal = cx.modal;
+    if modal.read().is_some() {
         modal.set(None);
         return;
     }
-    let route = cx.route.read().clone();
-    let target = match route.page {
-        Page::Sources => Route::media(
-            route.origin,
-            Page::Detail,
-            route.id.as_deref().unwrap_or_default(),
-        ),
-        Page::Detail => Route::new(route.origin, Page::Library),
-        _ => Route::new(route.origin, Page::Home),
-    };
-    navigate(target);
+    navigate(Route::new(cx.route.read().origin, Page::Home));
 }

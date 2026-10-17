@@ -2,5 +2,13 @@
 services:
   web:
     image: soto:local
-    build: .
+    build:
+      context: .
+      target: runtime
+    pull_policy: build
+  worker:
+    image: soto:worker-local
+    build:
+      context: .
+      target: worker
     pull_policy: build

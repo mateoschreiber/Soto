@@ -1,7 +1,8 @@
 //! Shared domain contracts for the Soto clients and server.
-mod demo;
+pub mod api;
+
 mod navigation;
-pub use demo::{demo_media, demo_sources};
+
 pub use navigation::{Direction, FocusBox, Page, Route, nearest_in_direction};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
@@ -113,7 +114,7 @@ impl Default for Preferences {
             version: 1,
             tv: false,
             remote_images: true,
-            profile: "Martín".into(),
+            profile: String::new(),
             saved: Vec::new(),
         }
     }

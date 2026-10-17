@@ -23,7 +23,7 @@ async fn health_and_headers_do_not_imply_real_services() {
     let policy = response.headers()["content-security-policy"]
         .to_str()
         .unwrap();
-    assert!(policy.contains("https://live.metahub.space"));
+    assert!(policy.contains("media-src 'self' blob:"));
     assert!(!policy.contains("https://*.metahub.space"));
     assert!(
         response.headers()["content-security-policy"]
@@ -39,8 +39,7 @@ async fn health_and_headers_do_not_imply_real_services() {
     );
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["stage"], 1);
-    assert_eq!(body["media_services_connected"], false);
+    assert_eq!(body["stage"], 2);
 }
 
 #[tokio::test]

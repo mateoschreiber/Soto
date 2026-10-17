@@ -1,3 +1,13 @@
+pub mod app;
+pub mod catalog;
+pub mod db;
+pub mod debrid;
+pub mod library;
+pub mod net;
+pub mod playback;
+pub mod providers;
+pub mod torrents;
+pub mod worker;
 use axum::{
     Json, Router,
     extract::{Request, State},
@@ -54,7 +64,7 @@ fn csp_for_index(index: &str) -> HeaderValue {
             ));
         }
     }
-    HeaderValue::from_str(&format!("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{hashes}; style-src 'self' 'unsafe-inline'; img-src 'self' https://images.metahub.space https://live.metahub.space data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" )).expect("static policy and base64 are valid header values")
+    HeaderValue::from_str(&format!("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{hashes}; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" )).expect("static policy and base64 are valid header values")
 }
 
 async fn security_headers(State(csp): State<HeaderValue>, req: Request, next: Next) -> Response {
@@ -101,10 +111,54 @@ async fn security_headers(State(csp): State<HeaderValue>, req: Request, next: Ne
 
 pub fn router(static_dir: PathBuf) -> Router {
     let index = std::fs::read_to_string(static_dir.join("index.html")).unwrap_or_default();
-    Router::new().route("/api/health",get(||async{Json(serde_json::json!({"status":"ok","stage":1,"media_services_connected":false,"version":env!("CARGO_PKG_VERSION")}))}))
+    Router::new().route("/api/health",get(||async{Json(serde_json::json!({"status":"ok","stage":2,"version":env!("CARGO_PKG_VERSION")}))}))
         .fallback_service(ServeDir::new(static_dir).precompressed_gzip())
         .layer(middleware::from_fn_with_state(csp_for_index(&index),security_headers))
         .layer(TraceLayer::new_for_http())
+}
+
+pub fn application(static_dir: PathBuf, state: app::AppState) -> Router {
+    let protected = app::session_routes()
+        .merge(catalog::routes())
+        .merge(library::routes())
+        .merge(playback::routes())
+        .merge(providers::routes())
+        .merge(debrid::routes())
+        .merge(torrents::routes())
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            app::authorize,
+        ));
+    let readiness = state.clone();
+    let api = app::public_routes().merge(protected).with_state(state);
+    router(static_dir)
+        .nest("/api/v1", api)
+        .route(
+            "/api/ready",
+            get(move || {
+                let s = readiness.clone();
+                async move {
+                    match s
+                        .db
+                        .call(|c| {
+                            c.query_row("SELECT 1", [], |_| Ok(()))?;
+                            Ok(())
+                        })
+                        .await
+                    {
+                        Ok(()) => (
+                            axum::http::StatusCode::OK,
+                            Json(serde_json::json!({"status":"ready"})),
+                        ),
+                        Err(_) => (
+                            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                            Json(serde_json::json!({"status":"unavailable"})),
+                        ),
+                    }
+                }
+            }),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024))
 }
 
 pub fn healthcheck(bind: SocketAddr) -> std::io::Result<()> {

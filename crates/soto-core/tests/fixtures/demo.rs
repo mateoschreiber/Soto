@@ -1,4 +1,4 @@
-use crate::{MediaItem, MediaSource, Origin, SourceStatus};
+use soto_core::{MediaItem, MediaSource, Origin, SourceStatus};
 /// Fixtures only. None of these objects asserts real server or provider availability.
 pub fn demo_media() -> Vec<MediaItem> {
     let rows = [

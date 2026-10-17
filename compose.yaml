@@ -1,17 +1,28 @@
 name: soto
 services:
   web:
-    image: ${SOTO_IMAGE:-ghcr.io/mateoschreiber/soto:0.1.0-alpha.1}
+    image: ${SOTO_IMAGE:-ghcr.io/mateoschreiber/soto:0.2.0-alpha.1}
     ports:
       - "${SOTO_HOST_IP:-127.0.0.1}:${SOTO_PORT:-3000}:3000"
     environment:
       SOTO_BIND: "0.0.0.0:3000"
       SOTO_STATIC_DIR: "/app/public"
+      SOTO_DATA_DIR: /data
+      SOTO_WORKER_URL: http://worker:3002
+      SOTO_WORKER_TOKEN_FILE: /run/soto/worker-token
+      SOTO_LOCAL_ROOTS: '{"local":"/media/local"}'
+      SOTO_TORRENTS_DIR: /torrents
+      SOTO_CACHE_DIR: /cache
+      SOTO_PUBLIC_URL: ${SOTO_PUBLIC_URL:-}
       RUST_LOG: "${RUST_LOG:-soto_server=info,tower_http=warn}"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: ${SOTO_MEMORY_LIMIT:-128m}
+    volumes:
+      - data:/data
+      - control:/run/soto
+      - "${SOTO_LOCAL_PATH:-./media/local}:/media/local:ro"
+    mem_limit: ${SOTO_MEMORY_LIMIT:-256m}
     cpus: ${SOTO_CPU_LIMIT:-0.50}
     pids_limit: 64
     init: true
@@ -22,3 +33,41 @@ services:
       options:
         max-size: "10m"
         max-file: "2"
+  worker:
+    image: ${SOTO_WORKER_IMAGE:-ghcr.io/mateoschreiber/soto:0.2.0-alpha.1-worker}
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      SOTO_WORKER_BIND: 0.0.0.0:3002
+      SOTO_WORKER_TOKEN_FILE: /run/soto/worker-token
+      SOTO_LOCAL_ROOTS: '{"local":"/media/local"}'
+      SOTO_TORRENTS_DIR: /torrents
+      SOTO_CACHE_DIR: /cache
+      RUST_LOG: soto_server=info,librqbit=error
+    volumes:
+      - control:/run/soto:ro
+      - torrents:/torrents
+      - cache:/cache
+      - "${SOTO_LOCAL_PATH:-./media/local}:/media/local:ro"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${SOTO_WORKER_MEMORY_LIMIT:-1g}
+    cpus: ${SOTO_WORKER_CPU_LIMIT:-1.0}
+    pids_limit: 64
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+volumes:
+  data:
+  control:
+  torrents:
+  cache:

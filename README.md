@@ -1,5 +1,8 @@
 # Soto
 
+[![Rust y Docker](https://github.com/mateoschreiber/Soto/actions/workflows/check.yml/badge.svg)](https://github.com/mateoschreiber/Soto/actions/workflows/check.yml)
+[![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
+
 Aplicación multimedia para un homelab: biblioteca de archivos locales, descubrimiento de películas y series, fuentes de torrents y conexión a Real-Debrid, con una interfaz web y un futuro cliente instalable en Android TV.
 
 **Estado: etapa 1, interfaz de demostración en Rust.** Incluye navegación, bibliotecas separadas, búsqueda, fichas, colecciones de ejemplo, estados visuales, vista TV web y servidor estático para Docker. No hay escaneo de archivos, autenticación, reproducción de películas, descargas, Real-Debrid conectado ni APK. Las siguientes etapas siguen pendientes.
@@ -10,16 +13,23 @@ Todo el código propio de aplicación y pruebas está escrito en Rust. Dioxus co
 
 ### Homelab con Docker
 
-Con Docker Engine y Compose disponibles, desde la raíz del repositorio:
+Con Docker Engine y Compose disponibles, descarga la versión para Linux Intel/AMD:
 
 ```sh
-docker compose up -d --build
+git clone https://github.com/mateoschreiber/Soto.git
+cd Soto
+git checkout v0.1.0-alpha.1
+cp .env.example .env
+docker compose pull
+docker compose up -d --wait
 docker compose ps
 ```
 
-Abrir [Soto local](http://127.0.0.1:3000). La primera compilación descarga las herramientas Rust y Dioxus. El contenedor final incluye únicamente el binario, sus bibliotecas del sistema y los recursos compilados; no incluye Cargo, compiladores ni Node.js.
+Abrir [Soto local](http://127.0.0.1:3000). Se descarga una imagen ya compilada; el homelab no necesita Rust, Cargo ni Node.js. Para construir desde el código: `docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait`.
 
-El puerto se publica en `127.0.0.1` por defecto. Para acceder desde la LAN, utiliza un proxy inverso con HTTPS o una modificación explícita de `ports` en tu instalación. Esta etapa solo expone datos de demostración y no solicita credenciales ni monta carpetas multimedia.
+El puerto se publica en `127.0.0.1` por defecto. Para acceder desde la LAN, cambia `SOTO_HOST_IP` en `.env` por la IP LAN de tu servidor. Portainer puede desplegar directamente `compose.yaml` y definir esas mismas variables. Esta etapa solo expone datos de demostración y no solicita credenciales ni monta carpetas multimedia.
+
+Consulta la **[guía de instalación y operación](docs/installation.md)** para Portainer, proxy, recursos, actualizaciones, reversión, diagnóstico e instalación portátil sin registro. [Notas de la versión](docs/releases/0.1.0-alpha.1.md).
 
 ```sh
 docker compose logs --tail=50 web
@@ -61,6 +71,10 @@ Las pruebas de Rust cubren orígenes, filtros, enlaces, preferencias, foco espac
 | `SOTO_BIND` | `127.0.0.1:3000` | Escucha del servidor; Compose usa `0.0.0.0:3000` dentro del contenedor |
 | `SOTO_STATIC_DIR` | `target/dx/soto-web/release/web/public` | Recursos compilados; Docker usa `/app/public` |
 | `SOTO_PORT` | `3000` | Puerto publicado por Compose, no cambia el puerto interno |
+| `SOTO_HOST_IP` | `127.0.0.1` | Interfaz del host donde se publica el puerto; configurable para LAN |
+| `SOTO_IMAGE` | `ghcr.io/mateoschreiber/soto:0.1.0-alpha.1` | Imagen de instalación; admite tag o digest |
+| `SOTO_MEMORY_LIMIT` | `128m` | Límite de memoria del contenedor |
+| `SOTO_CPU_LIMIT` | `0.50` | Límite de CPU del contenedor |
 | `RUST_LOG` | `soto_server=info,tower_http=warn` | Registro del servidor |
 
 `GET /api/health` devuelve la etapa y confirma que los servicios multimedia no están conectados. Los demás endpoints de la API no están implementados y responden 404.
@@ -144,7 +158,9 @@ crates/
   soto-server/         Axum, archivos estáticos y comprobación de salud
 docs/                  Plan y resultados de verificación
 Dockerfile             Compilación y runtime separados
-compose.yaml           Despliegue limitado al puerto local
+compose.yaml           Instalación con imagen precompilada y parámetros
+compose.build.yaml     Compilación optativa desde el código
+.env.example           Variables de instalación sin secretos
 .github/workflows/     Comprobaciones automatizadas
 ```
 
@@ -248,6 +264,12 @@ GitHub Actions comprobará formato, Clippy, pruebas, compilación WebAssembly y 
 Recorridos prioritarios: mantener el origen al descargar, buscar en cada espacio, reproducir y reanudar, cancelar un trabajo, recuperar un reinicio, rechazar acceso no autorizado y navegar con mando. Se revisarán escritorio, móvil y TV, además de formatos y dispositivos reales para las capacidades multimedia.
 
 La rama principal será `main`; los cambios de implementación se propondrán en ramas con revisión y comprobaciones. No habrá despliegue automático al homelab ni publicación automática de APK sin configurar ese proceso expresamente.
+
+## Licencia y comunidad
+
+El código propio se publica bajo [MIT](LICENSE). Las portadas y dependencias mantienen sus derechos y licencias: [avisos de terceros](THIRD_PARTY_NOTICES.md). Para contribuir consulta [CONTRIBUTING.md](CONTRIBUTING.md); para vulnerabilidades, [SECURITY.md](SECURITY.md).
+
+Los tags `v*` publican una imagen comprobada en GHCR y una versión preliminar con imagen portátil, Compose y sumas SHA-256. La publicación manual desde `main` utiliza el tag de desarrollo `edge`. No modifica ninguna instalación existente ni actualiza automáticamente tu homelab.
 
 ## Decisiones pendientes antes de implementar
 

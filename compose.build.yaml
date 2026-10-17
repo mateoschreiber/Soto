@@ -1,0 +1,6 @@
+# Development/source build: docker compose -f compose.yaml -f compose.build.yaml up -d --build
+services:
+  web:
+    image: soto:local
+    build: .
+    pull_policy: build

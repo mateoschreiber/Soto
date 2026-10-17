@@ -45,8 +45,9 @@ jobs:
       - name: Construir y arrancar en Docker
         run: |
           docker compose config --quiet
-          docker compose build
-          docker compose up -d --wait --wait-timeout 120
+          docker compose -f compose.yaml -f compose.build.yaml config --quiet
+          docker compose -f compose.yaml -f compose.build.yaml build
+          docker compose -f compose.yaml -f compose.build.yaml up -d --wait --wait-timeout 120
       - name: Comprobar runtime limitado
         run: |
           curl --fail --silent http://127.0.0.1:3000/api/health
@@ -55,7 +56,7 @@ jobs:
           docker compose exec -T web /app/soto-server --healthcheck
           test "$(docker compose exec -T web id -u)" = 10001
           test "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$(docker compose ps -q web)")" = true
-          docker image inspect soto:0.1.0 --format 'Imagen: {{.Size}} bytes'
+          docker image inspect soto:local --format 'Imagen: {{.Size}} bytes'
           docker stats --no-stream
       - name: Diagnóstico
         if: always()

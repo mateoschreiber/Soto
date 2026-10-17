@@ -9,7 +9,7 @@ use axum::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use sha2::{Digest, Sha256};
 use std::{net::SocketAddr, path::PathBuf};
-use tower_http::{compression::CompressionLayer, services::ServeDir, trace::TraceLayer};
+use tower_http::{services::ServeDir, trace::TraceLayer};
 
 #[derive(Debug)]
 pub struct Config {
@@ -58,10 +58,22 @@ fn csp_for_index(index: &str) -> HeaderValue {
 }
 
 async fn security_headers(State(csp): State<HeaderValue>, req: Request, next: Next) -> Response {
-    let asset = req.uri().path().starts_with("/assets/");
+    let path = req.uri().path();
+    let asset = path.starts_with("/assets/");
+    let fingerprinted = asset
+        && path.rsplit_once("-dxh").is_some_and(|(_, suffix)| {
+            suffix.split_once('.').is_some_and(|(hash, _)| {
+                !hash.is_empty() && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+        });
     let mut response = next.run(req).await;
-    let immutable = asset && response.status().is_success();
+    let immutable = fingerprinted
+        && (response.status().is_success()
+            || response.status() == axum::http::StatusCode::NOT_MODIFIED);
     let headers = response.headers_mut();
+    if asset {
+        headers.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    }
     headers.insert(header::CONTENT_SECURITY_POLICY, csp);
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -91,7 +103,6 @@ pub fn router(static_dir: PathBuf) -> Router {
     let index = std::fs::read_to_string(static_dir.join("index.html")).unwrap_or_default();
     Router::new().route("/api/health",get(||async{Json(serde_json::json!({"status":"ok","stage":1,"media_services_connected":false,"version":env!("CARGO_PKG_VERSION")}))}))
         .fallback_service(ServeDir::new(static_dir).precompressed_gzip())
-        .layer(CompressionLayer::new())
         .layer(middleware::from_fn_with_state(csp_for_index(&index),security_headers))
         .layer(TraceLayer::new_for_http())
 }

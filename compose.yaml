@@ -1,22 +1,22 @@
 name: soto
 services:
   web:
-    build: .
-    image: soto:0.1.0
+    image: ${SOTO_IMAGE:-ghcr.io/mateoschreiber/soto:0.1.0-alpha.1}
     ports:
-      - "127.0.0.1:${SOTO_PORT:-3000}:3000"
+      - "${SOTO_HOST_IP:-127.0.0.1}:${SOTO_PORT:-3000}:3000"
     environment:
       SOTO_BIND: "0.0.0.0:3000"
       SOTO_STATIC_DIR: "/app/public"
-      RUST_LOG: "soto_server=info,tower_http=warn"
+      RUST_LOG: "${RUST_LOG:-soto_server=info,tower_http=warn}"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 128m
-    cpus: 0.50
+    mem_limit: ${SOTO_MEMORY_LIMIT:-128m}
+    cpus: ${SOTO_CPU_LIMIT:-0.50}
     pids_limit: 64
     init: true
     restart: unless-stopped
+    stop_grace_period: 15s
     logging:
       driver: json-file
       options:

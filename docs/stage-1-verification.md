@@ -26,6 +26,8 @@ Fecha: 17 de octubre de 2026. Entorno local: Windows x86_64, Rust 1.99.1 GNU, Di
 
 ## Medidas observadas
 
+La preparación de distribución posterior añade tres pruebas HTTP (14 en total): variantes gzip/identity con `Vary`, caché limitada a nombres con huella y rechazo de rutas inválidas. Dos fallaron antes de corregir caché y `Vary`. Rustfmt, Clippy de host/WASM y cargo-audit se ejecutaron de nuevo; sin advertencias ni vulnerabilidades. Compose se validó con el Docker Compose disponible en el servidor del usuario, sin arrancar ni modificar servicios. Los workflows se revisaron con actionlint 1.7.12. Las medidas siguientes corresponden al build inicial; no se presentan como mediciones nuevas de la imagen de distribución.
+
 - WebAssembly de release utilizado por el HTML local: 1.017.887 bytes; comprimido con gzip nivel 9: 380.945 bytes. Excluye JavaScript generado por las dependencias, CSS e imágenes remotas.
 - Imagen Docker de la ejecución 3: 82.750.315 bytes, según `docker image inspect`.
 - Muestra puntual de `docker stats` tras las peticiones de salud: 960 KiB de memoria y 0,00 % de CPU, con límite de 128 MiB. Es una medición del servidor estático en reposo; no predice el consumo del futuro procesamiento multimedia ni del navegador cliente.

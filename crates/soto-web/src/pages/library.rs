@@ -72,7 +72,7 @@ pub fn Home() -> Element {
                     span { class: "pill", "16+ · Ejemplo" }
                 }
                 h1 { id: "page-title", tabindex: "-1", "{hero.title}" }
-                if hero.kind == "series" {
+                if hero.kind == "series" && !tv {
                     h2 { "Temporada 2" }
                 }
                 p { class: "hero-meta", "{hero.year} · {hero.duration} · {hero_genres}" }

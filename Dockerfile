@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 RUN case "$TARGETARCH" in amd64) DX_ARCH=x86_64;; arm64) DX_ARCH=aarch64;; *) exit 1;; esac \
     && curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_ARCH}-unknown-linux-gnu.tar.gz" -o /tmp/dx.tar.gz \
     && curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_ARCH}-unknown-linux-gnu.sha256" -o /tmp/dx.sha256 \
-    && cd /tmp && printf '%s  dx.tar.gz\n' "$(cut -d ' ' -f 1 dx.sha256)" | sha256sum -c - \
+    && cd /tmp && awk '/\.tar\.gz$/ {print $1 "  dx.tar.gz"}' dx.sha256 | sha256sum -c - \
     && tar xzf dx.tar.gz -C /usr/local/bin dx && rm dx.tar.gz dx.sha256
 ENV RUSTUP_TOOLCHAIN=1.99.1
 RUN rustup target add wasm32-unknown-unknown && rustup component add llvm-tools-preview
@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && find /out/public -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.css' \) -exec gzip -9 -k {} \;
 
 FROM debian:trixie-slim AS runtime
-RUN useradd --system --uid 10001 --no-create-home soto
+RUN groupadd --gid 10001 soto && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin soto
 WORKDIR /app
 COPY --from=build /out/ /app/
 USER 10001:10001

@@ -1,9 +1,10 @@
 name: Rust y Docker
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
     paths-ignore: ['docs/**', 'README.md']
   pull_request:
+    paths-ignore: ['docs/**', 'README.md']
 
 permissions:
   contents: read
@@ -17,10 +18,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Toolchain fijada
         run: rustup show
-      - uses: actions/cache@v4
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
@@ -40,7 +41,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Construir y arrancar en Docker
         run: |
           docker compose config --quiet

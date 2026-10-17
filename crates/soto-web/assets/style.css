@@ -1344,3 +1344,21 @@ margin-bottom:20px}
   .hero-copy { padding-top: 200px; }
   .hero-tags { margin-bottom: 20px; }
 }
+
+/* Fit a full first shelf in a 1080p TV viewport; subsequent shelves remain scrollable. */
+@media (min-width: 901px) {
+  .tv .topbar { height: 100px; }
+  .tv .hero { min-height: 375px; }
+  .tv .hero-copy { padding-top: 28px; padding-bottom: 25px; }
+  .tv .hero-tags { margin-bottom: 18px; }
+  .tv .hero-meta { margin-bottom: 18px; }
+  .tv .hero-description { font-size: 18px; margin-bottom: 20px; }
+  .tv .categories { padding-top: 15px; padding-bottom: 15px; }
+  .tv .category { min-height: 44px; padding: 8px; border-color: var(--line); }
+  .tv .category svg { display: none; }
+  .tv .shelf { padding-top: 28px; }
+  .tv .shelf-heading { margin-bottom: 16px; }
+  .tv .art { aspect-ratio: 2/2.65; }
+  .tv .poster-footer { min-height: 54px; padding: 10px; }
+  .tv .poster-title small { display: none; }
+}

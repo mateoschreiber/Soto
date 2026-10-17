@@ -1,0 +1,21 @@
+name: Error
+description: Informar de un comportamiento reproducible
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Versión o digest de imagen
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Pasos, resultado esperado y resultado observado
+      description: No incluyas credenciales, direcciones privadas ni archivos multimedia.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Entorno
+      description: Arquitectura, Docker/Compose, navegador y logs relevantes sin secretos.

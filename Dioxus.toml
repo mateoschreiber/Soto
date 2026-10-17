@@ -1,0 +1,10 @@
+[application]
+name = "soto-web"
+default_platform = "web"
+
+[web.app]
+title = "Soto · Tu biblioteca, en tu homelab"
+
+[web.watcher]
+reload_html = true
+watch_path = ["crates/soto-web/src", "crates/soto-web/assets"]

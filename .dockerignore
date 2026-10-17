@@ -1,0 +1,13 @@
+target
+node_modules
+.git
+.github
+.tools
+.env*
+secrets
+data
+media
+cache
+*.log
+test-results
+playwright-report

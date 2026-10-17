@@ -1,0 +1,121 @@
+name: Publicar demostración Docker
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soto-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Identificar versión
+        id: version
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          tag=edge
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
+            tag="${GITHUB_REF_NAME#v}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Compilar una vez, con caché
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: soto:release
+          build-args: |
+            VERSION=${{ steps.version.outputs.tag }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=soto-amd64
+          cache-to: type=gha,mode=max,scope=soto-amd64
+      - name: Comprobar la imagen antes de publicar
+        run: |
+          docker run -d --name soto-release --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --memory 128m --cpus 0.5 \
+            --pids-limit 64 -p 127.0.0.1:18080:3000 soto:release
+          for attempt in $(seq 1 30); do
+            if docker exec soto-release /app/soto-server --healthcheck; then break; fi
+            sleep 1
+          done
+          docker exec soto-release /app/soto-server --healthcheck
+          test "$(docker exec soto-release id -u)" = 10001
+          curl --fail --silent http://127.0.0.1:18080/api/health | jq -e '.status == "ok" and .media_services_connected == false'
+          curl --fail --silent http://127.0.0.1:18080/ -o /tmp/index.html
+          js=$(grep -oE '/\./assets/[^" ]+\.js' /tmp/index.html | head -1)
+          curl --fail --silent "http://127.0.0.1:18080$js" -o /tmp/app.js
+          wasm=$(grep -oE 'soto-web_bg-dxh[0-9a-f]+\.wasm' /tmp/app.js | head -1)
+          test -n "$wasm"
+          curl --fail --silent -H 'Accept-Encoding: gzip' -D /tmp/headers \
+            "http://127.0.0.1:18080/assets/$wasm" -o /tmp/app.wasm.gz
+          grep -qi '^content-encoding: gzip' /tmp/headers
+          grep -qi '^vary: accept-encoding' /tmp/headers
+          gzip -t /tmp/app.wasm.gz
+          docker image inspect soto:release --format 'Imagen: {{.Size}} bytes'
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publicar la misma imagen comprobada
+        env:
+          IMAGE: ${{ steps.version.outputs.image }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          docker tag soto:release "$IMAGE:$TAG"
+          docker push "$IMAGE:$TAG"
+      - name: Adjuntar instalación portátil a GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.version.outputs.image }}
+          TAG: ${{ steps.version.outputs.tag }}
+          API: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          asset="soto-$TAG-linux-amd64.tar.gz"
+          docker save "$IMAGE:$TAG" | gzip -1 > "$asset"
+          cp compose.yaml soto-compose.yaml
+          sha256sum "$asset" soto-compose.yaml > SHA256SUMS
+          jq -n --arg tag "$GITHUB_REF_NAME" --arg name "Soto $TAG — demostración" \
+            --rawfile body docs/releases/0.1.0-alpha.1.md \
+            '{tag_name:$tag,name:$name,body:$body,prerelease:true,draft:false}' > /tmp/release.json
+          curl --fail-with-body --silent -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/repos/$REPOSITORY/releases/tags/$GITHUB_REF_NAME" -o /tmp/release-existing.json || true
+          if jq -e '.id' /tmp/release-existing.json > /dev/null 2>&1; then
+            cp /tmp/release-existing.json /tmp/release-result.json
+          else
+            curl --fail-with-body --silent -X POST -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Content-Type: application/json' --data-binary @/tmp/release.json \
+              "$API/repos/$REPOSITORY/releases" > /tmp/release-result.json
+          fi
+          upload=$(jq -r '.upload_url | split("{")[0]' /tmp/release-result.json)
+          for file in "$asset" soto-compose.yaml SHA256SUMS; do
+            if jq -e --arg file "$file" '.assets[]? | select(.name == $file)' /tmp/release-result.json > /dev/null; then
+              echo "El recurso $file ya existe; se conserva la publicación anterior."
+              continue
+            fi
+            curl --fail-with-body --silent -X POST -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Content-Type: application/octet-stream' --data-binary "@$file" \
+              "$upload?name=$file" > /dev/null
+          done
+      - name: Limpiar contenedor de comprobación
+        if: always()
+        run: docker rm -f soto-release || true

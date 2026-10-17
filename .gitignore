@@ -29,3 +29,9 @@ cache/
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+
+# Rust y comprobaciones locales
+target/
+.tools/
+playwright-report/
+test-results/

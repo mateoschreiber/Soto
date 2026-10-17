@@ -20,6 +20,11 @@ async fn health_and_headers_do_not_imply_real_services() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["x-content-type-options"], "nosniff");
     assert_eq!(response.headers()["x-frame-options"], "DENY");
+    let policy = response.headers()["content-security-policy"]
+        .to_str()
+        .unwrap();
+    assert!(policy.contains("https://live.metahub.space"));
+    assert!(!policy.contains("https://*.metahub.space"));
     assert!(
         response.headers()["content-security-policy"]
             .to_str()

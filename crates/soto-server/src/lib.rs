@@ -54,7 +54,7 @@ fn csp_for_index(index: &str) -> HeaderValue {
             ));
         }
     }
-    HeaderValue::from_str(&format!("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{hashes}; style-src 'self' 'unsafe-inline'; img-src 'self' https://images.metahub.space data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" )).expect("static policy and base64 are valid header values")
+    HeaderValue::from_str(&format!("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{hashes}; style-src 'self' 'unsafe-inline'; img-src 'self' https://images.metahub.space https://live.metahub.space data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" )).expect("static policy and base64 are valid header values")
 }
 
 async fn security_headers(State(csp): State<HeaderValue>, req: Request, next: Next) -> Response {

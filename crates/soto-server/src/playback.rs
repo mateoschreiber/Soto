@@ -1,4 +1,4 @@
-use crate::app::{ApiError, AppState, User, new_id, now};
+use crate::app::{ApiError, AppState, LocalOwner, new_id, now};
 use axum::{
     Json, Router,
     extract::{Extension, Path, Query, Request, State},
@@ -21,7 +21,7 @@ fn auto() -> String {
 }
 async fn start(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Json(i): Json<Start>,
 ) -> Result<Json<Value>, ApiError> {
     if !["auto", "direct", "convert"].contains(&i.mode.as_str()) {
@@ -136,7 +136,7 @@ async fn start(
 }
 pub async fn source_for_session(
     s: &AppState,
-    user: &User,
+    user: &LocalOwner,
     id: &str,
 ) -> Result<(String, String, String), ApiError> {
     let (id, user) = (id.to_string(), user.id.clone());
@@ -159,7 +159,7 @@ pub async fn proxy_response(response: reqwest::Response) -> Result<Response, Api
 }
 async fn stream(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Path(id): Path<String>,
     req: Request,
 ) -> Result<Response, ApiError> {
@@ -232,7 +232,7 @@ async fn stream(
 }
 async fn hls(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Path((id, file)): Path<(String, String)>,
     req: Request,
 ) -> Result<Response, ApiError> {
@@ -265,7 +265,7 @@ async fn hls(
 }
 async fn stop(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let (copy, uid) = (id.clone(), u.id.clone());
@@ -337,7 +337,7 @@ async fn subtitle_tracks(
 }
 async fn local_subtitle(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Path((id, index)): Path<(String, u32)>,
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Response, ApiError> {

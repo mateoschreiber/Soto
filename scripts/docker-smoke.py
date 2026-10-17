@@ -2,7 +2,6 @@
 """Exercise already-built API and worker images with generated, redistributable media."""
 import argparse
 import gzip
-import http.cookiejar
 import json
 import os
 from pathlib import Path
@@ -46,10 +45,7 @@ def main():
             return run(*compose, *command, capture=capture)
 
         base = f"http://127.0.0.1:{port}"
-        client = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-
-        def request(path, method="GET", data=None, headers=None, authenticated=True):
+        def request(path, method="GET", data=None, headers=None):
             outgoing = dict(headers or {})
             payload = None
             if data is not None:
@@ -58,8 +54,7 @@ def main():
             if method not in ("GET", "HEAD"):
                 outgoing["x-soto-request"] = "1"
             req = urllib.request.Request(base + path, payload, outgoing, method=method)
-            opener = client if authenticated else urllib.request.build_opener()
-            with opener.open(req, timeout=40) as response:
+            with urllib.request.urlopen(req, timeout=40) as response:
                 return response.status, response.headers, response.read()
 
         def api(path, method="GET", data=None):
@@ -99,21 +94,16 @@ def main():
                     bindings = json.loads(run("docker", "inspect", "-f", "{{json .HostConfig.PortBindings}}", container, capture=True).stdout)
                     assert not bindings, "Worker must have no published host port"
 
-            assert api("/setup")["configured"] is False
-            token = dc("exec", "-T", "web", "/app/soto-server", "--print-setup-token", capture=True).stdout.strip()
-            assert token
-            password = "Smoke-" + uuid.uuid4().hex
-            api("/setup", "POST", {"setup_token": token, "server_name": "Controlled smoke",
-                                   "username": "smoke", "password": password})
-            assert api("/session")["admin"] is True
+            assert api("/catalog?origin=local") == []
+            for path in ("/setup", "/session"):
+                try:
+                    request("/api/v1" + path)
+                    raise AssertionError(f"Removed account endpoint is still available: {path}")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 404, (path, error.code)
             api("/settings", "PUT", {"server_name": "Controlled smoke", "torrent_enabled": False,
                                      "torrent_quota_gb": 0, "cache_quota_gb": 1,
                                      "download_kib": 0, "upload_kib": 1024})
-            try:
-                request("/api/v1/catalog", authenticated=False)
-                raise AssertionError("Catalog accepted an anonymous request")
-            except urllib.error.HTTPError as error:
-                assert error.code == 401
 
             print("Checking compiled interface and compressed WASM", flush=True)
             html = request("/")[2].decode()
@@ -165,20 +155,19 @@ def main():
                 assert box in output[:256], f"Missing fMP4 {box!r} box"
             api("/playback/" + converted["id"], "DELETE")
 
-            print("Restarting both services and checking persisted session/catalog/progress", flush=True)
+            print("Restarting both services and checking persisted catalog/progress without cookies", flush=True)
             dc("restart")
-            eventually(lambda: api("/session"), lambda value: value.get("username") == "smoke")
             eventually(lambda: subprocess.run([*compose, "exec", "-T", "worker", "/app/soto-worker", "--healthcheck"],
                                               cwd=root, env=env, capture_output=True, timeout=10).returncode,
                        lambda status: status == 0)
-            assert api("/setup")["configured"] is True
+            assert api("/catalog?origin=local")[0]["id"] == item["id"]
             assert any(entry["id"] == item["id"] for entry in api("/catalog?origin=local"))
             saved = next(entry for entry in api("/progress") if entry["media_id"] == item["id"])
             assert saved["position"] == 1.25 and saved["duration"] == 6.0
             resumed = api("/playback", "POST", {"source_id": source["id"], "mode": "direct"})
             assert resumed["position"] == 1.25
             api("/playback/" + resumed["id"], "DELETE")
-            print("Docker smoke passed: setup, authorization, scan, real bytes, conversion, persistence and health", flush=True)
+            print("Docker smoke passed: no-auth startup, scan, real bytes, conversion, persistence and health", flush=True)
         finally:
             subprocess.run([*compose, "logs", "--tail=80"], cwd=root, env=env, timeout=30, check=False)
             subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], cwd=root, env=env, timeout=60, check=False)

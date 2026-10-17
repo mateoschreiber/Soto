@@ -1,0 +1,16 @@
+# Auditoría de dependencias (cargo-audit).
+# Justificación de entradas ignoradas:
+#
+# RUSTSEC-2026-0293 (ringbuf 0.4.8, "Double free / use-after-free in
+# Consumer::skip/clear when an element's Drop panics"):
+#   Llega únicamente vía librqbit-utp 0.7.0 (librqbit 9.0.1, versión máxima
+#   disponible y fijada), que usa SharedRb<Heap<u8>>. El elemento es `u8`, sin
+#   implementación de Drop; es imposible que su Drop entre en pánico, por lo que
+#   el doble free/use-after-free descrito no es alcanzable en este uso. La
+#   corrección exige ringbuf >=0.5.2 (cambio semver incompatible con la
+#   restricción `^0.4` de librqbit-utp); no existe release de librqbit que la
+#   incorpore. Se revalúa en cada actualización de librqbit.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0293",
+]

@@ -1,0 +1,31 @@
+# Secretos y configuración privada
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+
+# Dependencias y compilación
+node_modules/
+dist/
+build/
+.gradle/
+.idea/
+local.properties
+*.apk
+*.aab
+
+# Datos del homelab
+data/
+media/
+cache/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db

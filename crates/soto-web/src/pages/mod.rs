@@ -414,7 +414,7 @@ pub fn Player() -> Element {
     if session.url.starts_with("/api/")&&!session.url.starts_with("//"){
     video{id:"soto-video",src:if is_hls{None}else{Some(session.url)},onmounted:move |_|{
         #[cfg(target_arch="wasm32")]
-        if is_hls {let url=hls_url.clone();let cancel=cancel.clone();spawn(async move{if let Some(video)=video_element(){if crate::hls::attach(video,url,cancel,start).await.is_err(){error.set(true);}}});}
+        if is_hls {let url=hls_url.clone();let cancel=cancel.clone();spawn(async move{if let Some(video)=video_element()&&crate::hls::attach(video,url,cancel,start).await.is_err(){error.set(true);}});}
         #[cfg(not(target_arch="wasm32"))]let _=(&hls_url,is_hls);
     },"data-timeline-offset":session.timeline_offset,"data-total-duration":session.duration.map(|v|v.to_string()).unwrap_or_default(),controls:true,autoplay:true,preload:"metadata",onloadedmetadata:move |_|{#[cfg(target_arch="wasm32")]if let Some(video)=video_element(){video.set_current_time(start.max(0.));} #[cfg(not(target_arch="wasm32"))]let _=start;},ontimeupdate:move |_|{#[cfg(target_arch="wasm32")]if let Some(video)=video_element(){let time=video.current_time();if (time-last_saved()).abs()>=10.{last_saved.set(time);save_progress(&update_media);}}#[cfg(not(target_arch="wasm32"))]let _=(&update_media,&mut last_saved);},onpause:move |_|save_progress(&pause_media),onended:move |_|save_progress(&media_id),onerror:move |_|error.set(true),for track in session.subtitles{track{kind:"subtitles",label:track.label,src:track.url}}}
     }else{p{role:"alert","El servidor devolvió una dirección de reproducción no válida."}}

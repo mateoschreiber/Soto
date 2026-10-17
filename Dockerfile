@@ -17,6 +17,7 @@ COPY crates ./crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --locked --release -p soto-server \
+    && rm -rf /src/target/dx/soto-web/release/web/public \
     && dx build -p soto-web --platform web --profile wasm-release --release --locked \
     && mkdir -p /out/public \
     && cp target/release/soto-server /out/soto-server \

@@ -13,7 +13,7 @@ pub fn media_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
         json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"kind":r.get::<_,String>(2)?,"year":r.get::<_,Option<u16>>(3)?,"description":r.get::<_,Option<String>>(4)?,"rating":r.get::<_,Option<String>>(5)?,"duration_seconds":r.get::<_,Option<i64>>(6)?,"poster":r.get::<_,Option<String>>(7)?,"origin":r.get::<_,String>(8)?,"source_count":r.get::<_,u32>(9)?}),
     )
 }
-pub const MEDIA_SELECT: &str = "SELECT m.id,m.title,m.kind,m.year,m.description,m.rating,m.duration_seconds,m.poster,m.origin,(SELECT count(*) FROM sources s WHERE s.media_id=m.id) FROM media m";
+pub const MEDIA_SELECT: &str = "SELECT m.id,m.title,m.kind,m.year,m.description,m.rating,m.duration_seconds,m.poster,m.origin,(SELECT count(*) FROM sources s WHERE s.media_id=m.id AND s.status='available') FROM media m";
 pub fn source_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     Ok(
         json!({"id":r.get::<_,String>(0)?,"media_id":r.get::<_,String>(1)?,"origin":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"label":r.get::<_,String>(4)?,"status":r.get::<_,String>(5)?,"quality":r.get::<_,Option<String>>(6)?,"size":r.get::<_,Option<i64>>(7)?,"video_codec":r.get::<_,Option<String>>(8)?,"audio_codec":r.get::<_,Option<String>>(9)?,"audio_streams":audio_tracks(&r.get::<_,String>(10)?)}),

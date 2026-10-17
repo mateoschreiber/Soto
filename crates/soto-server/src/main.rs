@@ -7,11 +7,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state =
         soto_server::app::AppState::open(soto_server::app::AppConfig::from_env().map_err(|e| e.2)?)
             .map_err(|e| e.2)?;
-    if std::env::args().any(|arg| arg == "--print-setup-token") {
-        let token = std::fs::read_to_string(state.config.data.join("bootstrap-token"))?;
-        println!("{}", token.trim());
-        return Ok(());
-    }
     if !config.static_dir.join("index.html").is_file() {
         return Err("Falta la interfaz compilada. Ejecuta dx build -p soto-web --platform web --release o configura SOTO_STATIC_DIR.".into());
     }

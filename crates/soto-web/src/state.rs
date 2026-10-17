@@ -1,4 +1,4 @@
-use crate::api::{Playback, Session};
+use crate::api::Playback;
 use dioxus::prelude::*;
 use soto_core::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -17,7 +17,6 @@ pub struct AppContext {
     pub route: Signal<Route>,
     pub preferences: Signal<UiPreferences>,
     pub modal: Signal<Option<DialogInfo>>,
-    pub session: Signal<Option<Session>>,
     pub revision: Signal<u64>,
     pub player: Signal<Option<(Playback, String)>>,
     pub focus_history: Rc<RefCell<HashMap<String, String>>>,

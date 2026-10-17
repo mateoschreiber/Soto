@@ -1,7 +1,7 @@
 name: soto
 services:
   web:
-    image: ${SOTO_IMAGE:-ghcr.io/mateoschreiber/soto:0.2.0-alpha.1}
+    image: ${SOTO_IMAGE:-ghcr.io/mateoschreiber/soto:0.2.0-alpha.2}
     ports:
       - "${SOTO_HOST_IP:-127.0.0.1}:${SOTO_PORT:-3000}:3000"
     environment:
@@ -34,7 +34,7 @@ services:
         max-size: "10m"
         max-file: "2"
   worker:
-    image: ${SOTO_WORKER_IMAGE:-ghcr.io/mateoschreiber/soto:0.2.0-alpha.1-worker}
+    image: ${SOTO_WORKER_IMAGE:-ghcr.io/mateoschreiber/soto:0.2.0-alpha.2-worker}
     depends_on:
       web:
         condition: service_healthy

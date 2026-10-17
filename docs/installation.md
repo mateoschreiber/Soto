@@ -9,16 +9,15 @@ Alfa funcional para Linux amd64 con Docker Engine, Compose v2 y un navegador con
 ```sh
 git clone https://github.com/mateoschreiber/Soto.git
 cd Soto
-git checkout v0.2.0-alpha.1
 cp .env.example .env
 ```
 
-El tag y las imágenes deben estar publicados para ese procedimiento. Durante el desarrollo, conserva el checkout de la rama y construye con `compose.build.yaml`. Edita `.env` antes del arranque:
+Para ejecutar el código actual desde `main`, construye las imágenes localmente con `compose.build.yaml`. Edita `.env` antes del arranque:
 
 | Variable de Compose | Valor inicial | Uso |
 | --- | --- | --- |
-| `SOTO_IMAGE` | `ghcr.io/mateoschreiber/soto:0.2.0-alpha.1` | API e interfaz |
-| `SOTO_WORKER_IMAGE` | `ghcr.io/mateoschreiber/soto:0.2.0-alpha.1-worker` | Worker con FFmpeg; misma versión que la API |
+| `SOTO_IMAGE` | `ghcr.io/mateoschreiber/soto:0.2.0-alpha.2` | API e interfaz; el tag se publicará con el release |
+| `SOTO_WORKER_IMAGE` | `ghcr.io/mateoschreiber/soto:0.2.0-alpha.2-worker` | Worker con FFmpeg; misma versión que la API |
 | `SOTO_LOCAL_PATH` | `./media/local` | Usa una ruta absoluta existente del host para medios reales |
 | `SOTO_HOST_IP` / `SOTO_PORT` | `127.0.0.1` / `3000` | Publicación del puerto de la API |
 | `SOTO_PUBLIC_URL` | vacío | Origen externo exacto, por ejemplo `https://soto.example.com` |
@@ -26,12 +25,10 @@ El tag y las imágenes deben estar publicados para ese procedimiento. Durante el
 | `SOTO_WORKER_MEMORY_LIMIT` / `SOTO_WORKER_CPU_LIMIT` | `1g` / `1.0` | Presupuesto del worker |
 
 ```sh
-docker compose pull
-docker compose up -d --wait
-docker compose exec web /app/soto-server --print-setup-token
+docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
 ```
 
-Abre [Soto local](http://127.0.0.1:3000) e introduce el token del comando. Crea el administrador y una contraseña de al menos 12 caracteres. El token es secreto y de un solo uso para esa instalación; no se publica una contraseña predeterminada. Después se elimina `/data/bootstrap-token`; el comando de impresión deja de servir para el inicio de sesión normal.
+Abre [Soto local](http://127.0.0.1:3000): Soto entra directamente en Inicio, sin cuentas, registro ni inicio de sesión. Desde Servidor, conecta bibliotecas y los servicios que quieras usar. La API administrativa no tiene autenticación; mantén el puerto solo en loopback o dentro de una LAN de confianza y no la publiques directamente en internet.
 
 Añade una biblioteca seleccionando la raíz y una carpeta relativa, y ejecuta el escaneo. Un catálogo recién instalado estará vacío hasta importar archivos o configurar proveedores; no contiene títulos de demostración.
 
@@ -62,7 +59,7 @@ Al añadir o resolver una fuente, elige el motor **P2P** o **Real-Debrid** expl�
 
 Añade solo los manifiestos de addons que quieras utilizar. No se instalan addons predeterminados ni se habilita un proveedor implícito. El acceso externo normal exige HTTPS y destinos públicos; no actives opciones de destinos privados para proveedores ajenos. Usa contenido y servicios autorizados para tu instalación.
 
-Los perfiles se guardan en SQLite. En esta alfa, progreso y colecciones pertenecen al **usuario autenticado**, no a cada perfil; elegir o crear un perfil no establece una frontera adicional de privacidad ni un historial de reproducción independiente.
+Soto funciona como un único servicio local y no ofrece cuentas ni perfiles de usuario. Una actualización desde una base anterior conserva y combina las colecciones y el progreso en el propietario local, y elimina sesiones y perfiles anteriores.
 
 ## Red y Portainer
 
@@ -72,9 +69,9 @@ El worker no publica puertos. La API escucha en loopback del host por defecto. P
 ssh -L 3000:127.0.0.1:3000 usuario@servidor
 ```
 
-Para un proxy HTTPS, sirve Soto en la raíz de un dominio y configura `SOTO_PUBLIC_URL` con ese origen exacto, sin una ruta como `/soto/`. Conserva las cabeceras de seguridad, cookies y `Content-Type`, `Content-Encoding`, `Vary` y `Cache-Control`. No vuelvas a comprimir respuestas gzip ni caches el HTML de forma persistente. Con proxy en el host, apunta a loopback; con proxy en Docker, usa una red común y `http://web:3000`. No publiques el puerto del worker ni lo abras en el router.
+Para un proxy HTTPS, sirve Soto en la raíz de un dominio y configura `SOTO_PUBLIC_URL` con ese origen exacto, sin una ruta como `/soto/`. Conserva las cabeceras de seguridad y `Content-Type`, `Content-Encoding`, `Vary` y `Cache-Control`. No vuelvas a comprimir respuestas gzip ni caches el HTML de forma persistente. Con proxy en el host, apunta a loopback; con proxy en Docker, usa una red común y `http://web:3000`. No publiques el puerto del worker ni lo abras en el router.
 
-En Portainer Standalone, crea un stack desde este repositorio y la referencia `refs/tags/v0.2.0-alpha.1`, con `compose.yaml`. Define las dos imágenes de la misma versión, una ruta absoluta `SOTO_LOCAL_PATH` y las variables de red/recursos necesarias. Conserva los cuatro volúmenes y obtén el token desde la consola del servicio web con `/app/soto-server --print-setup-token`. No pegues el token ni credenciales de proveedores en el stack.
+En Portainer Standalone, crea un stack desde la rama `main`. Para usar imágenes ya compiladas, configura ambas referencias de imagen de la misma versión; para construir localmente, usa `compose.build.yaml`. Define una ruta absoluta `SOTO_LOCAL_PATH` y las variables de recursos/red. Conserva los cuatro volúmenes y mantén el acceso a la API dentro de una red de confianza.
 
 ## Respaldo consistente
 
@@ -110,22 +107,13 @@ Antes de actualizar, crea el respaldo consistente y lee las notas. Fija `SOTO_IM
 
 ## Instalación portátil y compilación
 
-Cuando la versión esté publicada, descarga juntos `soto-0.2.0-alpha.1-linux-amd64.tar.gz`, `soto-compose.yaml` y `SHA256SUMS` de la versión de GitHub. El archivo contiene las dos imágenes:
-
-```sh
-sha256sum -c SHA256SUMS
-gzip -dc soto-0.2.0-alpha.1-linux-amd64.tar.gz | docker load
-SOTO_LOCAL_PATH=/ruta/absoluta/a/medios docker compose -f soto-compose.yaml up -d --pull never --wait
-docker compose -f soto-compose.yaml exec web /app/soto-server --print-setup-token
-```
-
-Para construir ambas imágenes desde el checkout:
+El paquete portátil de alpha.2 se publicará con su release. Hasta entonces, sigue la instalación desde `main` y compila con Docker:
 
 ```sh
 docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
 ```
 
-La compilación necesita más recursos y conectividad que el runtime. No exige instalar una toolchain Rust en el homelab cuando se usan imágenes precompiladas.
+La compilación necesita más recursos y conectividad que el runtime. No exige instalar una toolchain Rust en el homelab.
 
 ## Diagnóstico
 
@@ -142,8 +130,7 @@ Los healthchecks comprueban disponibilidad del proceso/API interna; no certifica
 | Síntoma | Revisar |
 | --- | --- |
 | No abre desde otro equipo | Loopback, túnel/proxy, IP publicada y firewall |
-| Configuración inicial rechazada | Token obtenido de esa instalación, contraseña mínima y ausencia de un administrador previo |
-| El proxy permite leer pero rechaza cambios | Origen externo exacto en `SOTO_PUBLIC_URL` y cookies HTTPS |
+| El proxy permite leer pero rechaza cambios | Origen externo exacto en `SOTO_PUBLIC_URL` y cabecera `x-soto-request` |
 | Biblioteca vacía o desconectada | Montaje del host, permisos de UID 10001 y estado real del escaneo |
 | Fallo de conversión | Worker healthy, cuota de caché, formato admitido, recursos y error de la tarea |
 | No inicia P2P | Activación explícita, cuota válida, límites, salida de red y estado de la tarea |

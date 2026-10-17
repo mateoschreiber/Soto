@@ -13,7 +13,6 @@ pub enum Page {
     Server,
     Providers,
     Devices,
-    Profiles,
     NotFound,
 }
 impl Page {
@@ -29,7 +28,6 @@ impl Page {
             Self::Server => "server",
             Self::Providers => "providers",
             Self::Devices => "devices",
-            Self::Profiles => "profiles",
             Self::NotFound => "not-found",
         }
     }
@@ -100,7 +98,6 @@ impl Route {
             "server" => Page::Server,
             "providers" => Page::Providers,
             "devices" => Page::Devices,
-            "profiles" => Page::Profiles,
             _ => return invalid(),
         };
         let id = if let Some(raw) = segments.get(2) {

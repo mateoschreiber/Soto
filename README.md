@@ -5,36 +5,33 @@
 
 Soto organiza medios de un homelab con bibliotecas locales, catálogo persistente, reproducción con progreso, conversión multimedia y fuentes HTTP, Real-Debrid o P2P. Local y Torrents conservan sus orígenes separados.
 
-**Estado: 0.2.0-alpha.1, alfa funcional en validación.** Las comprobaciones de CI y distribución son requisitos de publicación; este documento no certifica una instalación limpia ya verificada. Las cuentas Real-Debrid y los proveedores externos requieren configuración y comprobación propias. No hay APK ni compatibilidad Android TV certificada.
+**Estado: 0.2.0-alpha.2, en desarrollo.** Soto no requiere cuentas: abre directamente Inicio y mantiene una biblioteca única. Conserva las colecciones/progreso locales al migrar desde la versión anterior. Las comprobaciones de CI y distribución siguen siendo necesarias antes de afirmar que el despliegue está validado; no hay APK ni compatibilidad Android TV nativa certificada.
 
 ## Instalación
 
-Requiere Linux amd64, Docker Engine y Compose v2. El homelab utiliza dos imágenes precompiladas de la misma versión; no necesita Rust ni Node.js.
+Requiere Linux amd64, Docker Engine y Compose v2. El checkout de `main` compila las dos imágenes con Docker; no necesita Rust ni Node.js en el homelab.
 
 ```sh
 git clone https://github.com/mateoschreiber/Soto.git
 cd Soto
-git checkout v0.2.0-alpha.1
 cp .env.example .env
 ```
 
-Edita `.env`: configura `SOTO_LOCAL_PATH` con una carpeta absoluta del host que contenga tus medios. Una carpeta SMB/NFS debe estar montada primero en el host. Si la versión todavía no está publicada, usa la rama de desarrollo y el comando de compilación indicado más abajo.
+Edita `.env`: configura `SOTO_LOCAL_PATH` con una carpeta absoluta del host que contenga tus medios. Una carpeta SMB/NFS debe estar montada primero en el host.
 
 ```sh
-docker compose pull
-docker compose up -d --wait
-docker compose exec web /app/soto-server --print-setup-token
+docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
 ```
 
-Abre [Soto local](http://127.0.0.1:3000), introduce el token obtenido por CLI y crea el administrador con una contraseña de al menos 12 caracteres. El token no es una contraseña predeterminada y desaparece tras completar la configuración. Añade una biblioteca de la raíz local y ejecuta su escaneo.
+Abre [Soto local](http://127.0.0.1:3000): el servicio entra directamente en Inicio, sin cuentas ni pantalla de acceso. En Servidor, añade una biblioteca de la raíz local y ejecuta su escaneo. Soto es un servicio de un único hogar; su API de administración no tiene autenticación y debe mantenerse accesible solo desde tu LAN de confianza. El puerto se enlaza a loopback por defecto; conserva esa protección si usas un proxy inverso.
 
 El puerto del host escucha en loopback por defecto; el worker no publica puertos. Para acceso remoto, utiliza un túnel SSH o un proxy HTTPS y configura `SOTO_PUBLIC_URL` con el origen externo exacto.
 
-Consulta la [guía operativa](docs/installation.md) para volúmenes, respaldo/restauración, Portainer, cuotas y diagnóstico, y las [notas de 0.2](docs/releases/0.2.0-alpha.1.md). La [versión 0.1](docs/releases/0.1.0-alpha.1.md), su [verificación visual](docs/stage-1-verification.md) y su [verificación de distribución](docs/distribution-verification.md) son documentos históricos de la demostración.
+Consulta la [guía operativa](docs/installation.md) para volúmenes, respaldo/restauración, Portainer, cuotas y diagnóstico. Las [notas de 0.2.0-alpha.1](docs/releases/0.2.0-alpha.1.md) describen el release anterior; alpha.2 todavía está en desarrollo.
 
 ## Funcionalidad y límites
 
-- SQLite conserva bibliotecas, metadatos, perfiles, colecciones, tareas y progreso. Los perfiles son registros persistentes; el progreso y las colecciones se asocian al usuario autenticado, sin aislamiento de reproducción por perfil.
+- SQLite conserva bibliotecas, metadatos, colecciones, tareas y progreso. Soto no tiene cuentas ni perfiles de usuario; al migrar una base anterior, combina las colecciones y el progreso bajo un propietario local único y elimina las sesiones.
 - Los medios locales se montan de solo lectura. El worker inspecciona formatos y convierte cuando se solicita; la reproducción directa depende de los códecs del navegador.
 - En Ajustes, asigna una cuota de caché mayor que cero para convertir. Se permite una tarea multimedia simultánea, con HLS fMP4, H.264 y AAC. Los flujos remotos no admiten búsqueda arbitraria durante la conversión y algunos contenedores requieren entrada con búsqueda.
 - P2P comienza deshabilitado y requiere activación explícita, cuota de disco y límites de transferencia. Al añadir una fuente se elige expresamente P2P o Real-Debrid; no se cambia de motor en silencio.

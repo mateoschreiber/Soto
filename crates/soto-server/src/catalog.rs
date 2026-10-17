@@ -1,8 +1,7 @@
-use crate::app::{ApiError, AppState, User, new_id, now};
+use crate::app::{ApiError, AppState, LocalOwner, now};
 use axum::{
     Json, Router,
     extract::{Extension, Path, Query, State},
-    middleware,
     routing::{get, post, put},
 };
 use rusqlite::{OptionalExtension, params};
@@ -72,7 +71,7 @@ async fn detail(
 }
 async fn collections(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
 ) -> Result<Json<Value>, ApiError> {
     s.db.call(move|c|{let mut stmt=c.prepare(&format!("{MEDIA_SELECT} JOIN collections cl ON cl.media_id=m.id WHERE cl.user_id=? ORDER BY m.title"))?;Ok(Json(json!(stmt.query_map([u.id],media_row)?.collect::<Result<Vec<_>,_>>()?)))}).await
 }
@@ -82,7 +81,7 @@ struct Save {
 }
 async fn save(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Json(i): Json<Save>,
 ) -> Result<Json<Value>, ApiError> {
     s.db.call(move |c| {
@@ -96,7 +95,7 @@ async fn save(
 }
 async fn unsave(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     s.db.call(move |c| {
@@ -110,7 +109,7 @@ async fn unsave(
 }
 async fn progress(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
 ) -> Result<Json<Value>, ApiError> {
     s.db.call(move|c|{let mut stmt=c.prepare("SELECT media_id,position,duration FROM progress WHERE user_id=?")?;Ok(Json(json!(stmt.query_map([u.id],|r|Ok(json!({"media_id":r.get::<_,String>(0)?,"position":r.get::<_,f64>(1)?,"duration":r.get::<_,f64>(2)?})))?.collect::<Result<Vec<_>,_>>()?)))}).await
 }
@@ -121,7 +120,7 @@ struct Progress {
 }
 async fn set_progress(
     State(s): State<AppState>,
-    Extension(u): Extension<User>,
+    Extension(u): Extension<LocalOwner>,
     Path(id): Path<String>,
     Json(i): Json<Progress>,
 ) -> Result<Json<Value>, ApiError> {
@@ -206,47 +205,6 @@ async fn update_settings(
     .await?;
     Ok(Json(settings_value(&s).await?))
 }
-async fn profiles(State(s): State<AppState>) -> Result<Json<Value>, ApiError> {
-    s.db.call(|c| {
-        let mut stmt = c.prepare("SELECT id,name FROM profiles ORDER BY name")?;
-        Ok(Json(json!(
-            stmt.query_map([], |r| Ok(
-                json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?})
-            ))?
-            .collect::<Result<Vec<_>, _>>()?
-        )))
-    })
-    .await
-}
-#[derive(Deserialize)]
-struct Name {
-    name: String,
-}
-async fn add_profile(
-    State(s): State<AppState>,
-    Json(i): Json<Name>,
-) -> Result<Json<Value>, ApiError> {
-    let name = i.name.trim().to_string();
-    if name.is_empty() || name.len() > 80 {
-        return Err(ApiError::bad("Nombre inválido"));
-    }
-    let id = new_id();
-    s.db.call(move |c| {
-        c.execute("INSERT INTO profiles VALUES(?,?)", params![id, name])?;
-        Ok(Json(json!({"id":id,"name":name})))
-    })
-    .await
-}
-async fn delete_profile(
-    State(s): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, ApiError> {
-    s.db.call(move |c| {
-        c.execute("DELETE FROM profiles WHERE id=?", [id])?;
-        Ok(Json(json!({"ok":true})))
-    })
-    .await
-}
 async fn jobs(State(s): State<AppState>) -> Result<Json<Value>, ApiError> {
     s.db.call(|c|{let mut stmt=c.prepare("SELECT id,kind,status,progress,error FROM jobs ORDER BY created DESC LIMIT 200")?;Ok(Json(json!(stmt.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"kind":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"progress":r.get::<_,f64>(3)?,"error":r.get::<_,Option<String>>(4)?})))?.collect::<Result<Vec<_>,_>>()?)))}).await
 }
@@ -264,13 +222,6 @@ async fn cancel(
     s.db.call(move|c|{c.execute("UPDATE jobs SET status='cancelled',updated=? WHERE id=? AND status IN ('queued','running')",params![now(),id])?;Ok(Json(json!({"ok":true})))}).await
 }
 pub fn routes() -> Router<AppState> {
-    let admin = Router::new()
-        .route("/settings", get(settings).put(update_settings))
-        .route("/profiles", get(profiles).post(add_profile))
-        .route("/profiles/{id}", axum::routing::delete(delete_profile))
-        .route("/jobs", get(jobs))
-        .route("/jobs/{id}/cancel", post(cancel))
-        .route_layer(middleware::from_fn(crate::app::administrator));
     Router::new()
         .route("/catalog", get(catalog))
         .route("/catalog/{id}", get(detail))
@@ -279,7 +230,9 @@ pub fn routes() -> Router<AppState> {
         .route("/collections/{id}", axum::routing::delete(unsave))
         .route("/progress", get(progress))
         .route("/progress/{id}", put(set_progress))
-        .merge(admin)
+        .route("/settings", get(settings).put(update_settings))
+        .route("/jobs", get(jobs))
+        .route("/jobs/{id}/cancel", post(cancel))
 }
 
 async fn poster(

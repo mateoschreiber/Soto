@@ -2,19 +2,15 @@ use crate::app::{ApiError, AppState, new_id};
 use axum::{
     Json, Router,
     extract::{Path, State},
-    middleware,
     routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/torrents", get(list)).merge(
-        Router::new()
-            .route("/torrents", post(create))
-            .route("/torrents/{id}/{action}", post(action))
-            .route_layer(middleware::from_fn(crate::app::administrator)),
-    )
+    Router::new()
+        .route("/torrents", get(list).post(create))
+        .route("/torrents/{id}/{action}", post(action))
 }
 pub fn playable(n: &str) -> bool {
     let ext = n.rsplit('.').next().unwrap_or("").to_ascii_lowercase();

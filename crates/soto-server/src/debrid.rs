@@ -2,23 +2,17 @@ use crate::app::{ApiError, AppState, new_id};
 use axum::{
     Json, Router,
     extract::{Path, State},
-    middleware,
     routing::{get, post},
 };
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/debrid", get(status))
+        .route("/debrid", get(status).post(connect).delete(disconnect))
         .route("/debrid/torrents", get(list))
-        .merge(
-            Router::new()
-                .route("/debrid", post(connect).delete(disconnect))
-                .route("/debrid/sync", post(sync))
-                .route("/debrid/magnet", post(magnet))
-                .route("/debrid/torrents/{id}/select", post(select))
-                .route_layer(middleware::from_fn(crate::app::administrator)),
-        )
+        .route("/debrid/sync", post(sync))
+        .route("/debrid/magnet", post(magnet))
+        .route("/debrid/torrents/{id}/select", post(select))
 }
 pub async fn api(
     s: &AppState,

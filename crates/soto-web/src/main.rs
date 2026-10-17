@@ -53,7 +53,6 @@ fn App() -> Element {
         route,
         preferences,
         modal: Signal::new(None),
-        session: Signal::new(None),
         revision: Signal::new(0),
         player: Signal::new(None),
         focus_history: Rc::new(RefCell::new(HashMap::new())),
@@ -67,28 +66,12 @@ fn App() -> Element {
             browser::focus_route(&focus_cx, &route.read(), preferences.read().tv);
         });
     }
-    let mut boot = use_resource(move || async move {
-        let setup: api::Setup = api::request("GET", "/setup", None).await?;
-        if setup.configured {
-            match api::request::<api::Session>("GET", "/session", None).await {
-                Ok(session) => cx.session.set(Some(session)),
-                Err(e) if e.status == 401 => {}
-                Err(e) => return Err(e),
-            }
-        }
-        Ok::<_, api::ApiError>(setup)
-    });
     let modal = cx.modal.read().clone();
-    let session = cx.session.read().clone();
     rsx! {
     div{class:if preferences.read().tv{"app tv"}else{"app"},
-     if let Some(session)=session {
-      pages::Sidebar {}
-      pages::Topbar {session}
-      main{id:"main-content",class:"workspace",pages::RouteView {}}
-     }else{main{class:"auth-shell",
-      match &*boot.read(){None=>rsx!{pages::EmptyState{title:"Conectando con Soto…",message:"Comprobando la configuración del servidor."}},Some(Err(error))=>rsx!{pages::EmptyState{title:"Servidor no disponible",message:error.message.clone()}button{class:"button",onclick:move |_|boot.restart(),"Reintentar"}},Some(Ok(setup))=>rsx!{pages::Auth{configured:setup.configured,on_authenticated:move |_|boot.restart()}}}
-     }}
+     pages::Sidebar {}
+     pages::Topbar {}
+     main{id:"main-content",class:"workspace",pages::RouteView {}}
      if cx.player.read().is_some(){pages::Player {}}
      if let Some(info)=modal{div{class:"modal-backdrop",role:"presentation",section{class:"functional-dialog",role:"alertdialog","aria-modal":"true","aria-labelledby":"dialog-title",h2{id:"dialog-title","{info.title}"}p{"{info.message}"}button{class:"button",autofocus:true,onclick:move |_|cx.modal.set(None),"Cerrar"}}}}
     }

@@ -2,7 +2,6 @@ use crate::app::{ApiError, AppState, new_id};
 use axum::{
     Json, Router,
     extract::{Path, State},
-    middleware,
     routing::{get, post},
 };
 use rusqlite::params;
@@ -14,14 +13,9 @@ pub fn routes() -> Router<AppState> {
         .route("/sources/{id}/prepare", post(prepare))
         .route("/subtitles/{id}", get(subtitle))
         .route("/catalog/{id}/subtitles", get(subtitles_route))
-        .route("/providers", get(list))
-        .merge(
-            Router::new()
-                .route("/providers", post(install))
-                .route("/providers/{id}", axum::routing::delete(remove))
-                .route("/providers/{id}/refresh", post(refresh))
-                .route_layer(middleware::from_fn(crate::app::administrator)),
-        )
+        .route("/providers", get(list).post(install))
+        .route("/providers/{id}", axum::routing::delete(remove))
+        .route("/providers/{id}/refresh", post(refresh))
         .route("/catalog/{id}/resolve", post(resolve))
 }
 async fn fetch(s: &AppState, url: &str) -> Result<Value, ApiError> {
@@ -682,13 +676,9 @@ async fn subtitle(
 
 async fn prepare(
     State(s): State<AppState>,
-    axum::extract::Extension(user): axum::extract::Extension<crate::app::User>,
     Path(id): Path<String>,
     Json(v): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    if !user.admin {
-        return Err(ApiError::forbidden());
-    }
     use rusqlite::OptionalExtension;
     let row =
         s.db.call(move |c| {

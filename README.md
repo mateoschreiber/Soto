@@ -31,6 +31,8 @@ El puerto se publica en `127.0.0.1` por defecto. Para acceder desde la LAN, camb
 
 Consulta la **[guía de instalación y operación](docs/installation.md)** para Portainer, proxy, recursos, actualizaciones, reversión, diagnóstico e instalación portátil sin registro. [Notas de la versión](docs/releases/0.1.0-alpha.1.md).
 
+La descarga anónima y el arranque temporal en un homelab Intel están [verificados](docs/distribution-verification.md).
+
 ```sh
 docker compose logs --tail=50 web
 docker compose down
@@ -277,7 +279,7 @@ Los tags `v*` publican una imagen comprobada en GHCR y una versión preliminar c
 - Elegir el motor para torrents directos y fijar cuotas de disco y concurrencia.
 - Confirmar hardware del homelab, formatos prioritarios y modelo de Android TV para las pruebas.
 - Validar el contenedor web frente a una presentación nativa para TV mediante una prueba técnica.
-- Elegir una licencia para el código y revisar las licencias de dependencias y recursos antes de redistribuirlos.
+- Mantener actualizados los avisos de terceros al cambiar dependencias o incorporar recursos redistribuibles; el código propio ya usa MIT.
 
 ## Referencias técnicas
 
